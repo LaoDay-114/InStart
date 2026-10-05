@@ -145,6 +145,41 @@ static bool pick_mappings(const char* version) {
     return false;
 }
 
+// 从版本串提取基础版本号（前缀 \d+(\.\d+)* 部分）。
+// Fabric Loader 会把 getGameVersion() 改写成 "1.21.11-Fabric_0.19.2" 之类的
+// 加载器后缀形式，须剥离后再查表；后缀只允许 Fabric 标识 + 加载器版本号，
+// 避免把 "1.21.11-pre1-Fabric_x" 这类预发布误判成正式版。
+static bool extract_base_version(const char* ver, char* out, size_t outsz) {
+    if (!ver || ver[0] < '0' || ver[0] > '9') return false; // 快照 24w14a 不以纯版本开头
+    size_t n = 0;
+    while (ver[n] && ((ver[n] >= '0' && ver[n] <= '9') || ver[n] == '.')) ++n;
+    while (n > 0 && ver[n - 1] == '.') --n; // 防御性：去掉末尾孤立 '.'
+    if (n == 0 || n >= outsz) return false;
+
+    const char* rest = ver + n;
+    if (*rest) { // 有后缀：必须整体是 "-Fabric_0.19.2" 形式
+        while (*rest == '-' || *rest == '_' || *rest == ' ') ++rest;
+        // 大小写不敏感匹配 "fabric"
+        char buf[8] = {};
+        for (int i = 0; i < 6; ++i) {
+            char c = rest[i];
+            if (!c) return false;
+            buf[i] = (c >= 'A' && c <= 'Z') ? char(c + 32) : c;
+        }
+        if (strcmp(buf, "fabric") != 0) return false; // pre/rc 等一律拒绝
+        rest += 6;
+        // 剩余只能由分隔符/数字/'.'组成（加载器版本号）
+        for (const char* p = rest; *p; ++p) {
+            char c = *p;
+            if (!(c == '-' || c == '_' || c == ' ' ||
+                  (c >= '0' && c <= '9') || c == '.')) return false;
+        }
+    }
+    memcpy(out, ver, n);
+    out[n] = '\0';
+    return true;
+}
+
 #define RESOLVE_CLASS(var, name) do { \
     jclass _c = find_class(env, name); \
     if (!_c) return false; \
@@ -199,8 +234,9 @@ bool mc_jni_init() {
     strncpy(g_state.version, ver, sizeof g_state.version - 1);
     env->DeleteLocalRef(bootMc);
 
-    // 4. 按版本选映射；不兼容则停用功能并提示
-    if (!pick_mappings(ver)) {
+    // 4. 剥离 Fabric 加载器后缀后按版本选映射；不兼容则停用功能并提示
+    char base[64] = {};
+    if (!extract_base_version(ver, base, sizeof base) || !pick_mappings(base)) {
         g_cfg.versionOk = false;
         return false;
     }

@@ -1,0 +1,11 @@
+# 编译产物
+build/
+.xmake/
+InStart.dll
+InStart.dll.a
+InStartInjector.exe
+*.map
+
+# 打包/临时
+InStart.zip
+InStart.log

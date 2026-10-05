@@ -12,6 +12,9 @@ enum BindAction {
     BIND_ESP,        // 实体透视
     BIND_NOFALL,     // 无摔落
     BIND_HUD,        // 坐标 HUD
+    BIND_BLUR,       // 动态模糊
+    BIND_KILLAURA,   // 杀戮光环
+    BIND_TOTEM,      // 自动图腾
     BIND_COUNT
 };
 
@@ -28,10 +31,17 @@ struct InStartConfig {
     bool  fullbright = false; // 全亮（gamma=16）
     bool  esp        = false; // 实体透视（发光轮廓，穿墙可见）
     bool  espMobsOnly= false; // 仅生物（忽略掉落物/矿车等）
+    bool  motionBlur = false; // 动态模糊（帧累积拖影）
+    float blurAmount = 0.75f; // 模糊强度（上帧保留比例 0.1~0.95）
     // 保护
     bool  noFall     = false; // 无摔落伤害
+    // 战斗
+    bool  killaura   = false; // 杀戮光环（自动攻击附近生物）
+    float auraRange  = 3.0f;  // 杀戮光环范围（格）
+    bool  autoTotem  = false; // 自动图腾（副手无图腾时自动补上）
     // 按键绑定（Windows VK 码，0 表示未绑定）
-    int   bind[7]    = { 0xA5 /*VK_RMENU*/, 'F', 'G', 'B', 'V', 'N', 'H' };
+    // 默认：菜单=右 Alt（否则无法呼出菜单），功能键全部无绑定，需在"按键"页手动设置
+    int   bind[10]   = { 0xA5 /*VK_RMENU*/, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
     // 版本兼容状态
     bool  versionOk  = true;  // false = 检测到不兼容版本，功能全部停用
 };
@@ -47,3 +57,8 @@ struct InStartState {
 
 extern InStartConfig g_cfg;
 extern InStartState  g_state;
+
+// ---- 配置持久化（DLL 同目录的 InStartConfig 文件夹）----
+void config_init_path(void* moduleHandle); // 初始化路径并创建文件夹（启动时调用）
+void config_load();                        // 读取配置（无文件则保持默认值）
+void config_save();                        // 保存当前配置

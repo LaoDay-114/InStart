@@ -18,7 +18,9 @@ static const McVerMap* g_map = nullptr; // 当前版本的映射表
 // ---- 缓存的类 ----
 static jclass c_MinecraftClient, c_GameOptions, c_SimpleOption,
               c_PlayerAbilities, c_PlayerEntity, c_Double,
-              c_ClientWorld, c_LivingEntity;
+              c_ClientWorld, c_LivingEntity,
+              c_InteractionManager, c_PlayerInventory, c_ItemStack,
+              c_Items, c_SlotActionType;
 
 // ---- 缓存的方法 ----
 static jmethodID m_getInstance;          // MinecraftClient.getInstance()
@@ -29,15 +31,31 @@ static jmethodID m_dblValueOf;           // Double.valueOf(double)
 static jmethodID m_getEntities;          // ClientWorld.getEntities()
 static jmethodID m_setGlowing;           // Entity.setGlowing(boolean)
 static jmethodID m_it_iterator, m_it_hasNext, m_it_next; // Iterable/Iterator
+static jmethodID m_attackEntity;         // InteractionManager.attackEntity
+static jmethodID m_clickSlot;            // InteractionManager.clickSlot
+static jmethodID m_getInventory;         // PlayerEntity.getInventory()
+static jmethodID m_getOffHandStack;      // LivingEntity.getOffHandStack()
+static jmethodID m_deadOrDying;          // LivingEntity.isDeadOrDying()（1.21 为 isDead）
+static jmethodID m_stackIsEmpty;         // ItemStack.isEmpty()
+static jmethodID m_stackGetItem;         // ItemStack.getItem()
+static jmethodID m_list_size, m_list_get; // java.util.List.size/get
 
 // ---- 缓存的字段 ----
 static jfieldID f_mc_player;             // MinecraftClient.player
 static jfieldID f_mc_world;              // MinecraftClient.world
 static jfieldID f_mc_options;            // MinecraftClient.options
+static jfieldID f_mc_interactionManager; // MinecraftClient.interactionManager
+static jfieldID f_mc_currentScreen;      // MinecraftClient.currentScreen（null = 未打开 GUI）
 static jfieldID f_player_abilities;      // PlayerEntity.abilities
 static jfieldID f_ab_allowFlying, f_ab_flying, f_ab_flySpeed, f_ab_walkSpeed;
 static jfieldID f_ent_fallDistance;      // Entity.fallDistance（签名随版本 F/D）
 static jfieldID f_go_gamma;              // GameOptions.gamma (SimpleOption)
+static jfieldID f_inv_main;              // PlayerInventory.main (List<ItemStack>)
+static jfieldID f_player_screenHandler;  // PlayerEntity.playerScreenHandler（syncId 恒为 0，用于判背包界面打开）
+
+// ---- 静态对象（图腾物品 / SWAP 枚举）----
+static jobject g_totemItem = nullptr;
+static jobject g_swapAction = nullptr;
 
 // ---- 边沿触发的上次状态 ----
 static bool  prevFly = false, prevSpeed = false, prevFb = false, prevEsp = false;
@@ -196,6 +214,11 @@ bool mc_jni_init() {
     RESOLVE_CLASS(c_PlayerEntity,    M.clsPlayerEntity);
     RESOLVE_CLASS(c_ClientWorld,     M.clsClientWorld);
     RESOLVE_CLASS(c_LivingEntity,    M.clsLivingEntity);
+    RESOLVE_CLASS(c_InteractionManager, M.clsInteractionManager);
+    RESOLVE_CLASS(c_PlayerInventory, M.clsPlayerInventory);
+    RESOLVE_CLASS(c_ItemStack,       M.clsItemStack);
+    RESOLVE_CLASS(c_Items,           M.clsItems);
+    RESOLVE_CLASS(c_SlotActionType,  M.clsSlotActionType);
     jclass dbl = find_class(env, "java/lang/Double");
     if (!dbl) return false;
     c_Double = (jclass)env->NewGlobalRef(dbl);
@@ -222,6 +245,29 @@ bool mc_jni_init() {
         m_it_next     = env->GetMethodID(iterator, "next", "()Ljava/lang/Object;");
         if (!m_it_iterator || !m_it_hasNext || !m_it_next) return false;
     }
+    {
+        jclass list = find_class(env, "java/util/List");
+        if (!list) return false;
+        m_list_size = env->GetMethodID(list, "size", "()I");
+        m_list_get  = env->GetMethodID(list, "get", "(I)Ljava/lang/Object;");
+        if (!m_list_size || !m_list_get) return false;
+    }
+    // 杀戮光环/自动图腾相关（签名中的类名按版本动态拼接）
+    {
+        char msig[160];
+        snprintf(msig, sizeof msig, "(L%s;L%s;)V", M.clsPlayerEntity, M.clsEntity);
+        RESOLVE_METHOD(m_attackEntity, c_InteractionManager, M.mAttackEntity, msig);
+        snprintf(msig, sizeof msig, "(IIIL%s;L%s;)V", M.clsSlotActionType, M.clsPlayerEntity);
+        RESOLVE_METHOD(m_clickSlot, c_InteractionManager, M.mClickSlot, msig);
+        snprintf(msig, sizeof msig, "()L%s;", M.clsPlayerInventory);
+        RESOLVE_METHOD(m_getInventory, c_PlayerEntity, M.mGetInventory, msig);
+        snprintf(msig, sizeof msig, "()L%s;", M.clsItemStack);
+        RESOLVE_METHOD(m_getOffHandStack, c_PlayerEntity, M.mGetOffHandStack, msig);
+        RESOLVE_METHOD(m_deadOrDying, c_LivingEntity, M.mDeadOrDying, "()Z");
+        RESOLVE_METHOD(m_stackIsEmpty, c_ItemStack, M.mStackIsEmpty, "()Z");
+        snprintf(msig, sizeof msig, "()L%s;", M.clsItem);
+        RESOLVE_METHOD(m_stackGetItem, c_ItemStack, M.mStackGetItem, msig);
+    }
 
     // 字段
     char sig[64];
@@ -231,6 +277,15 @@ bool mc_jni_init() {
     RESOLVE_FIELD(f_mc_world, c_MinecraftClient, M.fMcWorld, sig);
     snprintf(sig, sizeof sig, "L%s;", M.clsGameOptions);
     RESOLVE_FIELD(f_mc_options, c_MinecraftClient, M.fMcOptions, sig);
+    snprintf(sig, sizeof sig, "L%s;", M.clsInteractionManager);
+    RESOLVE_FIELD(f_mc_interactionManager, c_MinecraftClient, M.fMcInteractionManager, sig);
+    // currentScreen 为 Screen 类型（可能为 null），描述符用当前版本 Screen 类
+    {
+        jclass scrCls = find_class(env, M.clsScreen);
+        if (!scrCls) return false;
+        snprintf(sig, sizeof sig, "L%s;", M.clsScreen);
+        RESOLVE_FIELD(f_mc_currentScreen, c_MinecraftClient, M.fMcCurrentScreen, sig);
+    }
     snprintf(sig, sizeof sig, "L%s;", M.clsPlayerAbilities);
     RESOLVE_FIELD(f_player_abilities, c_PlayerEntity, M.fPlayerAbilities, sig);
     RESOLVE_FIELD(f_ab_allowFlying, c_PlayerAbilities, M.fAllowFlying, "Z");
@@ -242,6 +297,31 @@ bool mc_jni_init() {
                   M.fallDistType == 'D' ? "D" : "F");
     snprintf(sig, sizeof sig, "L%s;", M.clsSimpleOption);
     RESOLVE_FIELD(f_go_gamma, c_GameOptions, M.fGamma, sig);
+
+    // PlayerInventory.main（声明类型为 DefaultedList，按版本动态）
+    snprintf(sig, sizeof sig, "L%s;", M.clsDefaultedList);
+    RESOLVE_FIELD(f_inv_main, c_PlayerInventory, M.fInvMain, sig);
+
+    // PlayerEntity.playerScreenHandler（背包界面，syncId=0）
+    snprintf(sig, sizeof sig, "L%s;", M.clsPlayerScreenHandler);
+    RESOLVE_FIELD(f_player_screenHandler, c_PlayerEntity, M.fPlayerScreenHandler, sig);
+
+    // 静态字段：Items.TOTEM_OF_UNDYING / SlotActionType.SWAP
+    {
+        snprintf(sig, sizeof sig, "L%s;", M.clsItem);
+        jfieldID sf = env->GetStaticFieldID(c_Items, M.fItemsTotem, sig);
+        if (!sf) return false;
+        jobject totem = env->GetStaticObjectField(c_Items, sf);
+        if (!totem) return false;
+        g_totemItem = env->NewGlobalRef(totem);
+
+        snprintf(sig, sizeof sig, "L%s;", M.clsSlotActionType);
+        sf = env->GetStaticFieldID(c_SlotActionType, M.fSlotSwap, sig);
+        if (!sf) return false;
+        jobject swap = env->GetStaticObjectField(c_SlotActionType, sf);
+        if (!swap) return false;
+        g_swapAction = env->NewGlobalRef(swap);
+    }
 
     g_env = env;
     g_state.jniReady = true;
@@ -359,6 +439,112 @@ void mc_apply_features() {
         g_state.py = env->CallDoubleMethod(player, m_getY);
         g_state.pz = env->CallDoubleMethod(player, m_getZ);
         if (env->ExceptionCheck()) env->ExceptionClear();
+    }
+
+    // ---- 杀戮光环：每 10 帧攻击范围内最近的存活生物 ----
+    static int kaTick = 0;
+    if (g_cfg.killaura && (++kaTick % 10 == 0)) {
+        jobject world = env->GetObjectField(mc, f_mc_world);
+        jobject im    = env->GetObjectField(mc, f_mc_interactionManager);
+        if (world && im) {
+            double px = env->CallDoubleMethod(player, m_getX);
+            double py = env->CallDoubleMethod(player, m_getY);
+            double pz = env->CallDoubleMethod(player, m_getZ);
+            double bestD2 = (double)g_cfg.auraRange * g_cfg.auraRange;
+            jobject best = nullptr;
+
+            jobject entities = env->CallObjectMethod(world, m_getEntities);
+            jobject iter = entities ? env->CallObjectMethod(entities, m_it_iterator) : nullptr;
+            while (iter && env->CallBooleanMethod(iter, m_it_hasNext)) {
+                jobject ent = env->CallObjectMethod(iter, m_it_next);
+                if (!ent) break;
+                if (!env->IsSameObject(ent, player) &&
+                    env->IsInstanceOf(ent, c_LivingEntity) &&
+                    !env->CallBooleanMethod(ent, m_deadOrDying)) {
+                    double dx = env->CallDoubleMethod(ent, m_getX) - px;
+                    double dy = env->CallDoubleMethod(ent, m_getY) - py;
+                    double dz = env->CallDoubleMethod(ent, m_getZ) - pz;
+                    double d2 = dx * dx + dy * dy + dz * dz;
+                    if (d2 < bestD2) { // 平方比较，免开方
+                        bestD2 = d2;
+                        if (best) env->DeleteLocalRef(best);
+                        best = ent;
+                        continue;
+                    }
+                }
+                env->DeleteLocalRef(ent);
+            }
+            if (env->ExceptionCheck()) env->ExceptionClear();
+            if (iter) env->DeleteLocalRef(iter);
+            if (entities) env->DeleteLocalRef(entities);
+
+            if (best) {
+                env->CallVoidMethod(im, m_attackEntity, player, best);
+                if (env->ExceptionCheck()) env->ExceptionClear();
+                env->DeleteLocalRef(best);
+            }
+        }
+        if (world) env->DeleteLocalRef(world);
+        if (im) env->DeleteLocalRef(im);
+    }
+
+    // ---- 自动图腾：副手无图腾时从背包 SWAP 一个到副手（每 10 帧检查）----
+    static int totemTick = 0;
+    if (g_cfg.autoTotem && (++totemTick % 10 == 0)) {
+        // 打开任意 GUI（背包/箱子等）时不动物品，避免干扰玩家操作
+        jobject curScreen = env->GetObjectField(mc, f_mc_currentScreen);
+        if (!curScreen && !env->ExceptionCheck()) {
+            bool hasTotem = false;
+            jobject offhand = env->CallObjectMethod(player, m_getOffHandStack);
+            if (offhand) {
+                if (!env->CallBooleanMethod(offhand, m_stackIsEmpty)) {
+                    jobject item = env->CallObjectMethod(offhand, m_stackGetItem);
+                    if (item) {
+                        hasTotem = env->IsSameObject(item, g_totemItem);
+                        env->DeleteLocalRef(item);
+                    }
+                }
+                env->DeleteLocalRef(offhand);
+            }
+            if (!hasTotem) {
+                jobject inv = env->CallObjectMethod(player, m_getInventory);
+                jobject mainList = inv ? env->GetObjectField(inv, f_inv_main) : nullptr;
+                if (mainList) {
+                    int n = env->CallIntMethod(mainList, m_list_size);
+                    int found = -1;
+                    for (int i = 0; i < n; ++i) {
+                        jobject st = env->CallObjectMethod(mainList, m_list_get, i);
+                        if (!st) continue;
+                        bool isTotem = false;
+                        if (!env->CallBooleanMethod(st, m_stackIsEmpty)) {
+                            jobject item = env->CallObjectMethod(st, m_stackGetItem);
+                            if (item) {
+                                isTotem = env->IsSameObject(item, g_totemItem);
+                                env->DeleteLocalRef(item);
+                            }
+                        }
+                        env->DeleteLocalRef(st);
+                        if (isTotem) { found = i; break; }
+                    }
+                    if (found >= 0) {
+                        jobject im = env->GetObjectField(mc, f_mc_interactionManager);
+                        if (im) {
+                            // PlayerInventory.main 索引 -> 玩家背包界面槽位：
+                            // 0~8 快捷栏对应槽位 36~44，9~35 背包格槽位号相同
+                            int slot = (found < 9) ? (36 + found) : found;
+                            // SWAP + button=40：与副手交换
+                            env->CallVoidMethod(im, m_clickSlot, 0, slot, 40, g_swapAction, player);
+                            if (env->ExceptionCheck()) env->ExceptionClear();
+                            env->DeleteLocalRef(im);
+                        }
+                    }
+                    env->DeleteLocalRef(mainList);
+                }
+                if (inv) env->DeleteLocalRef(inv);
+            }
+        }
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        if (curScreen) env->DeleteLocalRef(curScreen);
     }
 
     env->DeleteLocalRef(player);

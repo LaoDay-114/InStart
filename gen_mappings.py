@@ -30,6 +30,15 @@ WANT_CLASSES = {
     "net/minecraft/entity/Entity",
     "net/minecraft/client/world/ClientWorld",
     "net/minecraft/entity/LivingEntity",
+    "net/minecraft/client/network/ClientPlayerInteractionManager",
+    "net/minecraft/entity/player/PlayerInventory",
+    "net/minecraft/item/ItemStack",
+    "net/minecraft/item/Item",
+    "net/minecraft/item/Items",
+    "net/minecraft/screen/slot/SlotActionType",
+    "net/minecraft/screen/PlayerScreenHandler",
+    "net/minecraft/client/gui/screen/Screen",
+    "net/minecraft/util/collection/DefaultedList",
 }
 
 # ---- 需要的成员: (yarn类全名, f/m, yarn成员名, 描述符过滤或None) ----
@@ -54,6 +63,20 @@ WANT_MEMBERS = [
     ("net/minecraft/client/option/GameOptions", "f", "gamma", None),
     ("net/minecraft/client/option/SimpleOption", "m", "setValue", "(Ljava/lang/Object;)V"),
     ("net/minecraft/client/world/ClientWorld", "m", "getEntities", "()Ljava/lang/Iterable;"),
+    ("net/minecraft/client/MinecraftClient", "f", "interactionManager", None),
+    ("net/minecraft/client/MinecraftClient", "f", "currentScreen", None),
+    ("net/minecraft/client/network/ClientPlayerInteractionManager", "m", "attackEntity", None),
+    ("net/minecraft/client/network/ClientPlayerInteractionManager", "m", "clickSlot", None),
+    ("net/minecraft/entity/player/PlayerEntity", "m", "getInventory", None),
+    ("net/minecraft/entity/player/PlayerEntity", "f", "playerScreenHandler", None),
+    ("net/minecraft/entity/player/PlayerInventory", "f", "main", None),
+    ("net/minecraft/entity/LivingEntity", "m", "getOffHandStack", None),
+    ("net/minecraft/entity/LivingEntity", "m", "isDeadOrDying", "()Z"),
+    ("net/minecraft/entity/LivingEntity", "m", "isDead", "()Z"),  # 旧版名称（1.21）
+    ("net/minecraft/item/ItemStack", "m", "isEmpty", "()Z"),
+    ("net/minecraft/item/ItemStack", "m", "getItem", None),
+    ("net/minecraft/item/Items", "f", "TOTEM_OF_UNDYING", None),
+    ("net/minecraft/screen/slot/SlotActionType", "f", "SWAP", None),
 ]
 
 
@@ -148,6 +171,15 @@ def build_record(mcver, classes, members):
         "clsEntity": cls("net/minecraft/entity/Entity"),
         "clsClientWorld": cls("net/minecraft/client/world/ClientWorld"),
         "clsLivingEntity": cls("net/minecraft/entity/LivingEntity"),
+        "clsInteractionManager": cls("net/minecraft/client/network/ClientPlayerInteractionManager"),
+        "clsPlayerInventory": cls("net/minecraft/entity/player/PlayerInventory"),
+        "clsItemStack": cls("net/minecraft/item/ItemStack"),
+        "clsItem": cls("net/minecraft/item/Item"),
+        "clsItems": cls("net/minecraft/item/Items"),
+        "clsSlotActionType": cls("net/minecraft/screen/slot/SlotActionType"),
+        "clsPlayerScreenHandler": cls("net/minecraft/screen/PlayerScreenHandler"),
+        "clsScreen": cls("net/minecraft/client/gui/screen/Screen"),
+        "clsDefaultedList": cls("net/minecraft/util/collection/DefaultedList"),
         "mGetInstance": mem("net/minecraft/client/MinecraftClient", "m", "getInstance")[0],
         "mGetGameVersion": mem("net/minecraft/client/MinecraftClient", "m", "getGameVersion")[0],
         "mSendAbilitiesUpdate": mem("net/minecraft/entity/player/PlayerEntity", "m", "sendAbilitiesUpdate")[0],
@@ -157,15 +189,32 @@ def build_record(mcver, classes, members):
         "mSetValue": mem("net/minecraft/client/option/SimpleOption", "m", "setValue")[0],
         "mGetEntities": mem("net/minecraft/client/world/ClientWorld", "m", "getEntities")[0],
         "mSetGlowing": mem("net/minecraft/entity/Entity", "m", "setGlowing")[0],
+        "mAttackEntity": mem("net/minecraft/client/network/ClientPlayerInteractionManager", "m", "attackEntity")[0],
+        "mClickSlot": mem("net/minecraft/client/network/ClientPlayerInteractionManager", "m", "clickSlot")[0],
+        "mGetInventory": mem("net/minecraft/entity/player/PlayerEntity", "m", "getInventory")[0],
+        "fPlayerScreenHandler": mem("net/minecraft/entity/player/PlayerEntity", "f", "playerScreenHandler")[0],
+        "fInvMain": mem("net/minecraft/entity/player/PlayerInventory", "f", "main")[0],
+        "mGetOffHandStack": mem("net/minecraft/entity/LivingEntity", "m", "getOffHandStack")[0],
+        # isDeadOrDying：1.21 中名为 isDead，取两者中存在的那个
+        "mDeadOrDying": pick(
+            members.get(("net/minecraft/entity/LivingEntity", "m", "isDeadOrDying"),
+                        members[("net/minecraft/entity/LivingEntity", "m", "isDead")]),
+            "()Z", f"{mcver} LivingEntity.isDeadOrDying")[0],
+        "mStackIsEmpty": mem("net/minecraft/item/ItemStack", "m", "isEmpty")[0],
+        "mStackGetItem": mem("net/minecraft/item/ItemStack", "m", "getItem")[0],
         "fMcPlayer": mem("net/minecraft/client/MinecraftClient", "f", "player")[0],
         "fMcOptions": mem("net/minecraft/client/MinecraftClient", "f", "options")[0],
         "fMcWorld": mem("net/minecraft/client/MinecraftClient", "f", "world")[0],
+        "fMcInteractionManager": mem("net/minecraft/client/MinecraftClient", "f", "interactionManager")[0],
+        "fMcCurrentScreen": mem("net/minecraft/client/MinecraftClient", "f", "currentScreen")[0],
         "fPlayerAbilities": mem("net/minecraft/entity/player/PlayerEntity", "f", "abilities")[0],
         "fAllowFlying": mem("net/minecraft/entity/player/PlayerAbilities", "f", "allowFlying")[0],
         "fFlying": mem("net/minecraft/entity/player/PlayerAbilities", "f", "flying")[0],
         "fFlySpeed": mem("net/minecraft/entity/player/PlayerAbilities", "f", "flySpeed")[0],
         "fWalkSpeed": mem("net/minecraft/entity/player/PlayerAbilities", "f", "walkSpeed")[0],
         "fGamma": mem("net/minecraft/client/option/GameOptions", "f", "gamma")[0],
+        "fItemsTotem": mem("net/minecraft/item/Items", "f", "TOTEM_OF_UNDYING")[0],
+        "fSlotSwap": mem("net/minecraft/screen/slot/SlotActionType", "f", "SWAP")[0],
     }
     inter, desc = mem("net/minecraft/entity/Entity", "f", "fallDistance")
     rec["fFallDistance"] = inter
@@ -178,11 +227,17 @@ FIELD_ORDER = [
     "version",
     "clsMinecraftClient", "clsClientPlayerEntity", "clsGameOptions", "clsSimpleOption",
     "clsPlayerEntity", "clsPlayerAbilities", "clsEntity", "clsClientWorld", "clsLivingEntity",
+    "clsInteractionManager", "clsPlayerInventory", "clsItemStack", "clsItem", "clsItems",
+    "clsSlotActionType", "clsPlayerScreenHandler", "clsScreen", "clsDefaultedList",
     "mGetInstance", "mGetGameVersion", "mSendAbilitiesUpdate",
     "mGetX", "mGetY", "mGetZ", "mSetValue", "mGetEntities", "mSetGlowing",
-    "fMcPlayer", "fMcOptions", "fMcWorld", "fPlayerAbilities",
+    "mAttackEntity", "mClickSlot", "mGetInventory", "mGetOffHandStack", "mDeadOrDying",
+    "mStackIsEmpty", "mStackGetItem", "fPlayerScreenHandler",
+    "fMcPlayer", "fMcOptions", "fMcWorld", "fMcInteractionManager", "fMcCurrentScreen",
+    "fPlayerAbilities",
     "fAllowFlying", "fFlying", "fFlySpeed", "fWalkSpeed",
     "fFallDistance", "fallDistType", "fGamma",
+    "fItemsTotem", "fSlotSwap", "fInvMain",
 ]
 
 HEADER = """// ============================================================
@@ -203,6 +258,15 @@ struct McVerMap {
     const char* clsEntity;
     const char* clsClientWorld;
     const char* clsLivingEntity;
+    const char* clsInteractionManager;  // ClientPlayerInteractionManager
+    const char* clsPlayerInventory;
+    const char* clsItemStack;
+    const char* clsItem;
+    const char* clsItems;
+    const char* clsSlotActionType;
+    const char* clsPlayerScreenHandler; // 用于 fPlayerScreenHandler 字段描述符
+    const char* clsScreen;              // 用于 fMcCurrentScreen 字段描述符
+    const char* clsDefaultedList;   // PlayerInventory.main 的声明类型
     // ---- 方法（intermediary 名）----
     const char* mGetInstance;       // MinecraftClient.getInstance()
     const char* mGetGameVersion;    // MinecraftClient.getGameVersion()
@@ -213,10 +277,20 @@ struct McVerMap {
     const char* mSetValue;          // SimpleOption.setValue(Object)
     const char* mGetEntities;       // ClientWorld.getEntities()
     const char* mSetGlowing;        // Entity.setGlowing(Z)
+    const char* mAttackEntity;      // InteractionManager.attackEntity(player, entity)
+    const char* mClickSlot;         // InteractionManager.clickSlot(...)
+    const char* mGetInventory;      // PlayerEntity.getInventory()
+    const char* mGetOffHandStack;   // LivingEntity.getOffHandStack()
+    const char* mDeadOrDying;       // LivingEntity.isDeadOrDying()
+    const char* mStackIsEmpty;      // ItemStack.isEmpty()
+    const char* mStackGetItem;      // ItemStack.getItem()
+    const char* fPlayerScreenHandler; // PlayerEntity.playerScreenHandler（其 syncId 恒为 0）
     // ---- 字段（intermediary 名）----
     const char* fMcPlayer;
     const char* fMcOptions;
     const char* fMcWorld;
+    const char* fMcInteractionManager;
+    const char* fMcCurrentScreen;   // MinecraftClient.currentScreen（null = 未打开 GUI）
     const char* fPlayerAbilities;
     const char* fAllowFlying;
     const char* fFlying;
@@ -225,6 +299,9 @@ struct McVerMap {
     const char* fFallDistance;
     char        fallDistType;       // 'F'(float, <=1.21.8) 或 'D'(double, 1.21.9+)
     const char* fGamma;
+    const char* fItemsTotem;        // Items.TOTEM_OF_UNDYING（静态字段）
+    const char* fSlotSwap;          // SlotActionType.SWAP（静态枚举字段）
+    const char* fInvMain;           // PlayerInventory.main（List<ItemStack>）
 };
 
 static const McVerMap g_mcVerMaps[] = {

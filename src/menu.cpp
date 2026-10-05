@@ -92,6 +92,9 @@ void menu_draw() {
             { g_cfg.fullbright, "全亮" },
             { g_cfg.esp,        "实体透视" },
             { g_cfg.noFall,     "无摔落" },
+            { g_cfg.motionBlur, "动态模糊" },
+            { g_cfg.killaura,   "杀戮光环" },
+            { g_cfg.autoTotem,  "自动图腾" },
         };
         float y = 12.0f;
         int   idx = 0;
@@ -138,7 +141,20 @@ void menu_draw() {
             if (g_cfg.esp) {
                 ImGui::Checkbox("仅生物（忽略掉落物/矿车）", &g_cfg.espMobsOnly);
             }
+            ImGui::Checkbox("动态模糊", &g_cfg.motionBlur);
+            ImGui::SameLine(); ImGui::TextDisabled("帧累积拖影");
+            if (g_cfg.motionBlur)
+                ImGui::SliderFloat("模糊强度", &g_cfg.blurAmount, 0.1f, 0.95f, "%.2f");
             ImGui::Checkbox("坐标 HUD", &g_cfg.hud);
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("战斗")) {
+            ImGui::Checkbox("杀戮光环", &g_cfg.killaura);
+            ImGui::SameLine(); ImGui::TextDisabled("自动攻击最近生物");
+            if (g_cfg.killaura)
+                ImGui::SliderFloat("攻击范围", &g_cfg.auraRange, 1.5f, 5.0f, "%.1f 格");
+            ImGui::Checkbox("自动图腾", &g_cfg.autoTotem);
+            ImGui::SameLine(); ImGui::TextDisabled("副手无图腾时自动从背包补上");
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("保护")) {
@@ -157,7 +173,10 @@ void menu_draw() {
                 { "全亮",          BIND_FULLBRIGHT },
                 { "实体透视",      BIND_ESP },
                 { "无摔落",        BIND_NOFALL },
-                { "坐标 HUD",      BIND_HUD },
+                { "坐标 HUD", BIND_HUD },
+                { "动态模糊", BIND_BLUR },
+                { "杀戮光环", BIND_KILLAURA },
+                { "自动图腾", BIND_TOTEM },
             };
 
             int waiting = hooks_get_bind_waiting();

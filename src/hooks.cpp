@@ -14,6 +14,7 @@
 #include "hooks.h"
 #include "config.h"
 #include "menu.h"
+#include "blur.h"
 #include "jni/mc.h"
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND, UINT, WPARAM, LPARAM);
@@ -179,16 +180,18 @@ static void poll_keybinds() {
             if (key_edge(vk)) {
                 g_cfg.bind[g_bindWaiting] = vk;
                 g_bindWaiting = -1;
+                config_save(); // 改绑后立即保存
                 break;
             }
         }
         return; // 等待绑定时不响应其他快捷键
     }
 
-    // 菜单呼出/隐藏
+    // 菜单呼出/隐藏（关闭时保存配置）
     if (key_edge(g_cfg.bind[BIND_MENU])) {
         g_cfg.showMenu = !g_cfg.showMenu;
         ImGui::GetIO().MouseDrawCursor = g_cfg.showMenu;
+        if (!g_cfg.showMenu) config_save();
     }
 
     // 功能快捷键（仅当版本兼容时才有意义）
@@ -198,7 +201,10 @@ static void poll_keybinds() {
     if (key_edge(g_cfg.bind[BIND_FULLBRIGHT])) g_cfg.fullbright = !g_cfg.fullbright;
     if (key_edge(g_cfg.bind[BIND_ESP]))        g_cfg.esp        = !g_cfg.esp;
     if (key_edge(g_cfg.bind[BIND_NOFALL]))     g_cfg.noFall     = !g_cfg.noFall;
-    if (key_edge(g_cfg.bind[BIND_HUD]))        g_cfg.hud        = !g_cfg.hud;
+    if (key_edge(g_cfg.bind[BIND_HUD]))    g_cfg.hud        = !g_cfg.hud;
+    if (key_edge(g_cfg.bind[BIND_BLUR]))   g_cfg.motionBlur = !g_cfg.motionBlur;
+    if (key_edge(g_cfg.bind[BIND_KILLAURA])) g_cfg.killaura = !g_cfg.killaura;
+    if (key_edge(g_cfg.bind[BIND_TOTEM]))    g_cfg.autoTotem = !g_cfg.autoTotem;
 }
 
 // 供 menu.cpp 调用：设置/查询按键绑定等待状态
@@ -206,6 +212,9 @@ void hooks_set_bind_waiting(int idx) { g_bindWaiting = idx; }
 int  hooks_get_bind_waiting()        { return g_bindWaiting; }
 
 void hooks_frame() {
+    // 0. 动态模糊：游戏帧已渲染完成，在 ImGui 绘制前做帧累积（菜单不受影响）
+    blur_apply();
+
     // 1. 应用功能（写入游戏对象 / 回填坐标）—— 在游戏渲染线程上执行
     mc_apply_features();
 

@@ -10,6 +10,8 @@ InStartConfig g_cfg;
 InStartState  g_state;
 
 static DWORD WINAPI init_thread(LPVOID arg) {
+    config_init_path(arg); // 创建 InStartConfig 文件夹（首次启动）
+    config_load();         // 读取已保存的配置
     hooks_init((HMODULE)arg);
     return 0;
 }

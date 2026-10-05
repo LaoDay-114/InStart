@@ -27,6 +27,8 @@ target("InStart")
         "src/dllmain.cpp",
         "src/hooks.cpp",
         "src/menu.cpp",
+        "src/config.cpp",
+        "src/blur.cpp",
         "src/jni/mc.cpp",
         IMGUI .. "/imgui.cpp",
         IMGUI .. "/imgui_draw.cpp",

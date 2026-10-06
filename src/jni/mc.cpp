@@ -205,16 +205,19 @@ static bool extract_base_version(const char* ver, char* out, size_t outsz) {
 
 #define RESOLVE_FIELD(var, cls, name, sig) do { \
     var = env->GetFieldID(cls, name, sig); \
-    if (!var) return false; \
+    if (!var) { env->ExceptionClear(); return false; } \
 } while (0)
 
 #define RESOLVE_METHOD(var, cls, name, sig) do { \
     var = env->GetMethodID(cls, name, sig); \
-    if (!var) return false; \
+    if (!var) { env->ExceptionClear(); return false; } \
 } while (0)
 
 bool mc_jni_init() {
     if (g_env) return true;
+    // 失败路径统一出口：JNI 查询失败会留下 pending 异常，若不清理，
+    // 异常会在回到 Java 边界时抛出（NoSuchMethodError 等）并导致游戏崩溃
+    #define INIT_FAIL() do { if (env->ExceptionCheck()) env->ExceptionClear(); return false; } while (0)
 
     // 1. 取进程内已存在的 JVM（jvm.dll 已随 javaw.exe 加载）
     if (!g_vm) {
@@ -283,31 +286,31 @@ bool mc_jni_init() {
     // 方法
     m_getInstance = env->GetStaticMethodID(c_MinecraftClient, M.mGetInstance,
                                            "()Lnet/minecraft/class_310;");
-    if (!m_getInstance) return false;
+    if (!m_getInstance) INIT_FAIL();
     RESOLVE_METHOD(m_sendAbilitiesUpdate, c_PlayerEntity, M.mSendAbilitiesUpdate, "()V");
     RESOLVE_METHOD(m_getX, c_PlayerEntity, M.mGetX, "()D");
     RESOLVE_METHOD(m_getY, c_PlayerEntity, M.mGetY, "()D");
     RESOLVE_METHOD(m_getZ, c_PlayerEntity, M.mGetZ, "()D");
     RESOLVE_METHOD(m_setValue, c_SimpleOption, M.mSetValue, "(Ljava/lang/Object;)V");
     m_dblValueOf = env->GetStaticMethodID(c_Double, "valueOf", "(D)Ljava/lang/Double;");
-    if (!m_dblValueOf) return false;
+    if (!m_dblValueOf) INIT_FAIL();
     RESOLVE_METHOD(m_getEntities, c_ClientWorld, M.mGetEntities, "()Ljava/lang/Iterable;");
     RESOLVE_METHOD(m_setGlowing, c_PlayerEntity, M.mSetGlowing, "(Z)V");
     {
         jclass iterable = find_class(env, "java/lang/Iterable");
         jclass iterator = find_class(env, "java/util/Iterator");
-        if (!iterable || !iterator) return false;
+        if (!iterable || !iterator) INIT_FAIL();
         m_it_iterator = env->GetMethodID(iterable, "iterator", "()Ljava/util/Iterator;");
         m_it_hasNext  = env->GetMethodID(iterator, "hasNext", "()Z");
         m_it_next     = env->GetMethodID(iterator, "next", "()Ljava/lang/Object;");
-        if (!m_it_iterator || !m_it_hasNext || !m_it_next) return false;
+        if (!m_it_iterator || !m_it_hasNext || !m_it_next) INIT_FAIL();
     }
     {
         jclass list = find_class(env, "java/util/List");
-        if (!list) return false;
+        if (!list) INIT_FAIL();
         m_list_size = env->GetMethodID(list, "size", "()I");
         m_list_get  = env->GetMethodID(list, "get", "(I)Ljava/lang/Object;");
-        if (!m_list_size || !m_list_get) return false;
+        if (!m_list_size || !m_list_get) INIT_FAIL();
     }
     // 杀戮光环/自动图腾相关（签名中的类名按版本动态拼接）
     {
@@ -385,16 +388,16 @@ bool mc_jni_init() {
     {
         snprintf(sig, sizeof sig, "L%s;", M.clsItem);
         jfieldID sf = env->GetStaticFieldID(c_Items, M.fItemsTotem, sig);
-        if (!sf) return false;
+        if (!sf) INIT_FAIL();
         jobject totem = env->GetStaticObjectField(c_Items, sf);
-        if (!totem) return false;
+        if (!totem) INIT_FAIL();
         g_totemItem = env->NewGlobalRef(totem);
 
         snprintf(sig, sizeof sig, "L%s;", M.clsSlotActionType);
         sf = env->GetStaticFieldID(c_SlotActionType, M.fSlotSwap, sig);
-        if (!sf) return false;
+        if (!sf) INIT_FAIL();
         jobject swap = env->GetStaticObjectField(c_SlotActionType, sf);
-        if (!swap) return false;
+        if (!swap) INIT_FAIL();
         g_swapAction = env->NewGlobalRef(swap);
     }
 
@@ -403,9 +406,9 @@ bool mc_jni_init() {
         char msig[128];
         snprintf(msig, sizeof msig, "L%s;", M.clsRegistryEntry);
         jfieldID sf = env->GetStaticFieldID(c_EntityAttributes, M.fMovementSpeed, msig);
-        if (!sf) return false;
+        if (!sf) INIT_FAIL();
         jobject attr = env->GetStaticObjectField(c_EntityAttributes, sf);
-        if (!attr) return false;
+        if (!attr) INIT_FAIL();
         g_moveSpeedAttr = env->NewGlobalRef(attr);
     }
 

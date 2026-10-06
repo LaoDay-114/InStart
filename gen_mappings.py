@@ -133,20 +133,22 @@ def get_tiny(mcver):
 
 
 def parse_tiny(text):
-    """返回 (classes, members)
+    """返回 (classes, classes_official, members)
     classes: named类名 -> intermediary类名
+    classes_official: official类名 -> intermediary类名（用于从官方描述符推导运行时类型）
     members: (named类名, kind, named成员名) -> [(intermediary, official_desc), ...]
     """
     lines = text.splitlines()
     header = lines[0].split("\t")
     ns = header[3:]
     idx_named, idx_int = ns.index("named"), ns.index("intermediary")
-    classes, members = {}, {}
+    classes, classes_official, members = {}, {}, {}
     cur = None
     for ln in lines[1:]:
         p = ln.split("\t")
         if p[0] == "c":
             cur = p[1 + idx_named]
+            classes_official[p[1]] = p[1 + idx_int]
             if cur in WANT_CLASSES:
                 classes[cur] = p[1 + idx_int]
         elif p[0] == "" and len(p) > 3 and p[1] in ("f", "m") and cur:
@@ -154,7 +156,7 @@ def parse_tiny(text):
             cols = p[3:]
             key = (cur, kind, cols[idx_named])
             members.setdefault(key, []).append((cols[idx_int], desc))
-    return classes, members
+    return classes, classes_official, members
 
 
 def pick(cands, desc_filter, what):
@@ -165,7 +167,7 @@ def pick(cands, desc_filter, what):
     raise RuntimeError(f"未找到成员: {what}")
 
 
-def build_record(mcver, classes, members):
+def build_record(mcver, classes, classes_official, members):
     """按 mappings.h 中 McVerMap 的字段顺序组装一条版本记录"""
     for c in WANT_CLASSES:
         if c not in classes:
@@ -201,7 +203,13 @@ def build_record(mcver, classes, members):
         "clsPlayerScreenHandler": cls("net/minecraft/screen/PlayerScreenHandler"),
         "clsScreen": cls("net/minecraft/client/gui/screen/Screen"),
         "clsDefaultedList": cls("net/minecraft/util/collection/DefaultedList"),
-        "clsMinecraftServer": cls("net/minecraft/server/MinecraftServer"),
+        # getServer() 返回类型按官方描述符推导：1.21.9 起 yarn 改为返回
+        # IntegratedServer（如 1.21.11 为 class_1132），旧版返回 MinecraftServer，
+        # 固定写 MinecraftServer 的 intermediary 会导致 GetMethodID 描述符不匹配
+        "clsMinecraftServer": classes_official[
+            mem("net/minecraft/client/MinecraftClient", "m", "getServer")[1]
+            .split(")L", 1)[1][:-1]
+        ],
         "clsPlayerManager": cls("net/minecraft/server/PlayerManager"),
         "clsAttributeContainer": cls("net/minecraft/entity/attribute/AttributeContainer"),
         "clsAttributeInstance": cls("net/minecraft/entity/attribute/EntityAttributeInstance"),
@@ -400,8 +408,8 @@ def main():
     for v in VERSIONS:
         print(f"[{v}]")
         tiny = get_tiny(v)
-        classes, members = parse_tiny(tiny)
-        records.append(build_record(v, classes, members))
+        classes, classes_official, members = parse_tiny(tiny)
+        records.append(build_record(v, classes, classes_official, members))
 
     # 生成版本表
     out = [HEADER % " / ".join(VERSIONS)]

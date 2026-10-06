@@ -2,6 +2,7 @@
 #include <windows.h>
 #include "hooks.h"
 #include "config.h"
+#include "update_check.h"
 
 InStartConfig g_cfg;
 InStartState  g_state;
@@ -10,6 +11,7 @@ static DWORD WINAPI init_thread(LPVOID arg) {
     config_init_path(arg);
     config_load();
     hooks_init((HMODULE)arg);
+    update_check_async();
     return 0;
 }
 

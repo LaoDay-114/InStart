@@ -5,8 +5,12 @@ InStart.dll
 InStart.dll.a
 InStartInjector.exe
 InStart.exe
+InStartUpdateManager.exe
 InStartConfig/
+InStartUpdate.state
 *.map
+*.new
+*.old
 
 # 打包/临时
 InStart.zip

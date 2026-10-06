@@ -1,7 +1,4 @@
--- ============================================================
--- InStart xmake 构建脚本（MinGW-w64 x64，静态链接运行时）
--- 用法: xmake f -p mingw --mingw=E:\mingw64 -m release -y && xmake
--- ============================================================
+-- MinGW-w64 x64，静态链接运行时。
 set_project("InStart")
 set_languages("c99", "c++17")
 set_arch("x64")
@@ -14,7 +11,22 @@ end
 local IMGUI = "third_party/imgui-1.91.8"
 local MH    = "third_party/minhook-1.3.3"
 
--- ---------- InStart.dll：注入进 Minecraft(Java版) 的功能模块 ----------
+-- 版本与 CI 标签保持一致：build-<提交计数>-<短SHA>。
+-- 根作用域不能执行外部命令，放到规则的 on_config 里取 git 信息。
+rule("inst_version")
+    on_config(function (target)
+        local ver = "dev"
+        try {
+            function ()
+                local count = os.iorun("git rev-list --count HEAD"):trim()
+                local sha   = os.iorun("git rev-parse --short HEAD"):trim()
+                ver = "build-" .. count .. "-" .. sha
+            end
+        }
+        target:add("defines", 'INST_VERSION="' .. ver .. '"', {force = true})
+    end)
+
+-- 注入进 Minecraft(Java版) 的功能模块
 target("InStart")
     set_kind("shared")
     set_targetdir(".")
@@ -30,6 +42,7 @@ target("InStart")
         "src/config.cpp",
         "src/nofall.cpp",
         "src/jni/mc.cpp",
+        "update/update_check.cpp",
         IMGUI .. "/imgui.cpp",
         IMGUI .. "/imgui_draw.cpp",
         IMGUI .. "/imgui_tables.cpp",
@@ -44,6 +57,7 @@ target("InStart")
     add_includedirs(
         "src",
         "src/jni",
+        "update",
         IMGUI,
         IMGUI .. "/backends",
         MH .. "/include",
@@ -51,12 +65,11 @@ target("InStart")
         jdk .. "/include/win32")
 
     add_defines("UNICODE", "_UNICODE")
-    add_syslinks("opengl32", "gdi32", "user32", "kernel32", "dwmapi")
-    -- 静态链接 MinGW 运行时：目标机器无需 libgcc/libstdc++（否则 LoadLibraryW 返回 0）
-    -- 注意：DLL 是 shared 目标，必须用 shflags（ldflags 只对 exe 生效）
+    add_syslinks("opengl32", "gdi32", "user32", "kernel32", "dwmapi", "winhttp", "shell32")
+    add_rules("inst_version")
+    -- DLL 是 shared 目标，静态运行时必须走 shflags（ldflags 只对 exe 生效）
     add_shflags("-static", "-static-libgcc", "-static-libstdc++", {force = true})
 
--- ---------- InStartInjector.exe：注入器 ----------
 target("InStartInjector")
     set_kind("binary")
     set_targetdir(".")
@@ -66,7 +79,6 @@ target("InStartInjector")
     add_syslinks("user32")
     add_ldflags("-static", "-static-libgcc", "-static-libstdc++", {force = true})
 
--- ---------- InStart.exe：启动器（现代 UI，调用注入器完成注入） ----------
 target("InStartLauncher")
     set_kind("binary")
     set_targetdir(".")
@@ -83,3 +95,15 @@ target("InStartLauncher")
     add_defines("UNICODE", "_UNICODE")
     add_syslinks("d3d11", "dxgi", "d3dcompiler", "dwmapi", "user32", "gdi32")
     add_ldflags("-static", "-static-libgcc", "-static-libstdc++", {force = true})
+
+target("InStartUpdateManager")
+    set_kind("binary")
+    set_targetdir(".")
+    set_basename("InStartUpdateManager")
+    add_files("update/main.cpp", "update/update_check.cpp")
+    add_includedirs("update")
+    add_defines("UNICODE", "_UNICODE")
+    add_syslinks("winhttp", "user32")
+    add_rules("inst_version")
+    add_ldflags("-mwindows", "-static", "-static-libgcc", "-static-libstdc++",
+                {force = true})

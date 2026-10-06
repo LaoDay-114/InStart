@@ -7,6 +7,7 @@ on:
       - 'src/**'
       - 'injector/**'
       - 'launcher/**'
+      - 'update/**'
       - 'xmake.lua'
       - '.github/workflows/release.yml'
   workflow_dispatch:
@@ -76,20 +77,22 @@ jobs:
           } > notes.md
 
           if [ -z "$prev_sha" ] || changed xmake.lua .github; then
-            assets=(InStart.dll InStartInjector.exe InStart.exe)
+            assets=(InStart.dll InStartInjector.exe InStart.exe InStartUpdateManager.exe)
           else
             changed src && assets+=(InStart.dll)
             changed injector && assets+=(InStartInjector.exe)
             if changed launcher injector/game_instances.h; then
               assets+=(InStart.exe)
             fi
+            changed update && assets+=(InStartUpdateManager.exe)
           fi
 
           for f in "${assets[@]}"; do
             echo "- $f" >> notes.md
           done
 
-          tag="build-$(date -u +%Y%m%d-%H%M)-${GITHUB_SHA::7}"
+          count=$(git rev-list --count HEAD)
+          tag="build-$count-${GITHUB_SHA::7}"
           gh release create "$tag" "${assets[@]}" \
-            --title "自动构建 $(date -u +%Y-%m-%d)" \
+            --title "$tag" \
             --notes-file notes.md

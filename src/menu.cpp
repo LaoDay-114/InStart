@@ -1,9 +1,16 @@
 // 游戏内菜单：坐标 HUD、右上角功能列表、注入横幅、ImGui 主界面
 #include <cstdio>
 #include <cmath>
+#include <string>
 #include <imgui.h>
 #include "config.h"
 #include "hooks.h"
+#include <shellapi.h>
+#include "update_check.h"
+
+#ifndef INST_VERSION
+#define INST_VERSION "dev"
+#endif
 
 static ImU32 rainbow_color(int idx, float speed = 1.2f, float sat = 0.85f, float val = 1.0f) {
     float hue = fmodf((float)ImGui::GetTime() * speed * 0.15f + idx * 0.12f, 1.0f);
@@ -27,11 +34,11 @@ static float draw_chip(ImDrawList* dl, ImFont* font, float x, float y, const cha
 }
 
 // 屏幕顶部居中的提示横幅
-static void draw_banner(ImDrawList* dl, ImFont* font, const char* text, ImU32 color) {
+static void draw_banner(ImDrawList* dl, ImFont* font, const char* text, ImU32 color,
+                        float y = 20.0f) {
     ImGuiIO& io = ImGui::GetIO();
     ImVec2 ts = font->CalcTextSizeA(20.0f, FLT_MAX, 0, text);
     float x = (io.DisplaySize.x - ts.x) * 0.5f;
-    float y = 20.0f;
     const float padX = 14.f, padY = 8.f;
     dl->AddRectFilled(ImVec2(x - padX, y - padY),
                       ImVec2(x + ts.x + padX, y + ts.y + padY),
@@ -39,6 +46,14 @@ static void draw_banner(ImDrawList* dl, ImFont* font, const char* text, ImU32 co
     dl->AddRectFilled(ImVec2(x - padX, y - padY),
                       ImVec2(x - padX + 3.f, y + ts.y + padY), color, 6.0f);
     dl->AddText(font, 20.0f, ImVec2(x, y), color, text);
+}
+
+static std::wstring dll_dir() {
+    wchar_t buf[MAX_PATH];
+    GetModuleFileNameW(GetModuleHandleW(L"InStart.dll"), buf, MAX_PATH);
+    std::wstring p(buf);
+    size_t s = p.find_last_of(L"\\/");
+    return p.substr(0, s + 1);
 }
 
 void menu_draw() {
@@ -59,6 +74,25 @@ void menu_draw() {
             int alpha = age > 3.0f ? (int)((4.0f - age) * 255) : 255;
             draw_banner(dl, font, "InStart 注入完成", IM_COL32(80, 255, 120, alpha));
         }
+    }
+
+    static UpdateInfo s_update;
+    static bool s_updateGot = false;
+    if (!s_updateGot && update_check_done()) {
+        update_copy(s_update);
+        s_updateGot = true;
+    }
+
+    long long curNum = update_build_num(INST_VERSION);
+    bool updateAvailable = s_updateGot && s_update.ok && s_update.num > curNum;
+
+    static float updateBannerAt = -1.f;
+    if (updateAvailable && updateBannerAt < 0.f)
+        updateBannerAt = (float)ImGui::GetTime();
+    if (updateBannerAt > 0.f && ImGui::GetTime() - updateBannerAt < 12.f) {
+        char buf[96];
+        snprintf(buf, sizeof buf, "发现新版本 %s，打开菜单 -> 状态", s_update.tag.c_str());
+        draw_banner(dl, font, buf, IM_COL32(90, 170, 255, 255), 64.0f);
     }
 
     // 左上角坐标 HUD
@@ -194,6 +228,36 @@ void menu_draw() {
             ImGui::Text("JNI 初始化: %s", g_state.jniReady ? "完成" : "进行中...");
             ImGui::Text("游戏状态:   %s", g_state.inGame ? "已进入世界" : "未进入世界");
             ImGui::Text("游戏版本:   %s", g_state.version[0] ? g_state.version : "未知");
+            ImGui::Separator();
+            ImGui::Text("当前版本: %s", INST_VERSION);
+
+            if (!s_updateGot) {
+                ImGui::TextDisabled("正在检查更新...");
+            } else if (!s_update.ok) {
+                ImGui::TextDisabled("更新检查失败（网络不可用）");
+            } else if (updateAvailable) {
+                ImGui::TextColored(ImVec4(0.35f, 0.67f, 1.0f, 1.0f),
+                                   "发现新版本: %s", s_update.tag.c_str());
+                ImGui::BeginChild("##notes", ImVec2(-1, 110), true);
+                if (s_update.notes.empty()) ImGui::TextDisabled("(无更新说明)");
+                else ImGui::TextWrapped("%s", s_update.notes.c_str());
+                ImGui::EndChild();
+
+                if (ImGui::Button("打开下载页"))
+                    ShellExecuteW(nullptr, L"open",
+                                  utf8_to_wide(s_update.page).c_str(), nullptr,
+                                  nullptr, SW_SHOWNORMAL);
+                ImGui::SameLine();
+                std::wstring dir = dll_dir();
+                if (ImGui::Button("立即更新"))
+                    ShellExecuteW(nullptr, L"open",
+                                  (dir + L"InStartUpdateManager.exe").c_str(),
+                                  nullptr, dir.c_str(), SW_SHOWNORMAL);
+                ImGui::SameLine();
+                ImGui::TextDisabled("更新后重启游戏生效");
+            } else {
+                ImGui::Text("已是最新版本");
+            }
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();

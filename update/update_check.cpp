@@ -14,7 +14,8 @@ std::wstring utf8_to_wide(const std::string& s) {
 }
 
 static bool http_get(const std::wstring& host, const std::wstring& path,
-                     const std::wstring& headers, std::string& body) {
+                     const std::wstring& headers, std::string& body,
+                     DownloadProgress cb = nullptr, void* user = nullptr) {
     bool ok = false;
     HINTERNET session = WinHttpOpen(L"InStart", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
                                     WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
@@ -45,6 +46,13 @@ static bool http_get(const std::wstring& host, const std::wstring& path,
                                 WINHTTP_HEADER_NAME_BY_INDEX, &code, &len,
                                 WINHTTP_NO_HEADER_INDEX)
             && code == 200) {
+            unsigned long long total = 0, got = 0;
+            DWORD clen = 0, clenSize = sizeof clen;
+            if (WinHttpQueryHeaders(request,
+                                    WINHTTP_QUERY_CONTENT_LENGTH | WINHTTP_QUERY_FLAG_NUMBER,
+                                    WINHTTP_HEADER_NAME_BY_INDEX, &clen, &clenSize,
+                                    WINHTTP_NO_HEADER_INDEX))
+                total = clen;
             for (;;) {
                 DWORD avail = 0;
                 if (!WinHttpQueryDataAvailable(request, &avail)) break;
@@ -55,6 +63,8 @@ static bool http_get(const std::wstring& host, const std::wstring& path,
                     break;
                 chunk.resize(read);
                 body += chunk;
+                got += read;
+                if (cb) cb(user, got, total);
             }
         }
     }
@@ -228,13 +238,14 @@ UpdateInfo fetch_latest_release() {
     return parse_release(body);
 }
 
-bool download_file(const std::string& url, const std::wstring& path) {
+bool download_file(const std::string& url, const std::wstring& path,
+                   DownloadProgress cb, void* user) {
     std::string host, path8;
     if (!split_url(url, host, path8)) return false;
 
     std::string body;
     if (!http_get(utf8_to_wide(host), utf8_to_wide(path8),
-                  L"User-Agent: InStart\r\n", body))
+                  L"User-Agent: InStart\r\n", body, cb, user))
         return false;
 
     HANDLE h = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr,
@@ -273,6 +284,8 @@ void update_check_async() {
         g_done.store(true);
     }).detach();
 }
+
+void update_check_reset() { g_done.store(false); }
 
 bool update_check_done() { return g_done.load(); }
 

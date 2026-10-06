@@ -116,7 +116,7 @@ void menu_draw() {
     ImGui::Begin("InStart", nullptr, ImGuiWindowFlags_NoCollapse);
     {
         char keyName[32];
-        ImGui::TextDisabled("%s 开关菜单  |  仅限单机使用",
+        ImGui::TextDisabled("%s 开关菜单",
                             hooks_vk_name(g_cfg.bind[BIND_MENU], keyName, sizeof keyName));
     }
     ImGui::Separator();

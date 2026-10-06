@@ -34,11 +34,25 @@ static std::vector<GameInstance> g_instances;
 static int      g_selected = -1;
 static float    g_scanCooldown = 0.f;
 
+static TitleKeywords g_kw;                 // 标题匹配关键词（内置 + 自定义）
+static char          g_kwInput[128] = "";  // 新关键词输入框（UTF-8）
+
 static std::atomic<bool> g_injecting{ false };
 static std::string       g_log;            // 注入输出
 static int               g_lastExit = -1;  // -1 无结果 0 成功 1 失败 2 崩溃
 static bool              g_resultNew = false;
 static int               g_injectedPid = 0;
+
+// 重新扫描游戏实例
+static void rescan() {
+    g_instances.clear();
+    g_selected = -1;
+    GameInstance items[16];
+    int n = scan_game_instances_kw(items, 16, &g_kw);
+    g_instances.assign(items, items + n);
+    if (n > 0) g_selected = 0;
+    g_resultNew = false;
+}
 
 // 主题色
 static const ImVec4 ACCENT   = ImVec4(0.45f, 0.40f, 0.95f, 1.0f);
@@ -230,6 +244,58 @@ static void draw_ui() {
     float footerH = 120.f;
     ImGui::BeginChild("##list", ImVec2(0, -footerH), true);
 
+    // 标题关键词管理（可折叠）
+    if (ImGui::CollapsingHeader("标题匹配关键词")) {
+        ImGui::Indent(8);
+        ImGui::TextDisabled("窗口标题包含以下任一关键词即视为游戏实例");
+
+        // 关键词标签流式排列；内置词不可删，自定义词可删
+        int delIdx = -1;
+        for (int i = 0; i < g_kw.count; ++i) {
+            char u8[80];
+            WideCharToMultiByte(CP_UTF8, 0, g_kw.items[i], -1, u8, sizeof u8, nullptr, nullptr);
+            ImGui::PushID(100 + i);
+            bool builtin = i < GI_BUILTIN_KEYWORDS;
+            if (builtin) ImGui::BeginDisabled(true);
+            ImGui::PushStyleColor(ImGuiCol_Button,
+                builtin ? ImVec4(0.16f, 0.17f, 0.21f, 1.0f)
+                        : ImVec4(ACCENT.x, ACCENT.y, ACCENT.z, 0.35f));
+            if (ImGui::SmallButton(builtin ? u8 : (std::string(u8) + "  ×").c_str()))
+                if (!builtin) delIdx = i;
+            ImGui::PopStyleColor();
+            if (builtin) ImGui::EndDisabled();
+            ImGui::PopID();
+            ImGui::SameLine(0, 8);
+        }
+        ImGui::NewLine();
+
+        // 添加新关键词
+        ImGui::SetNextItemWidth(260);
+        bool add = ImGui::InputTextWithHint("##kw", "输入自定义标题关键词，回车添加",
+                                            g_kwInput, sizeof g_kwInput,
+                                            ImGuiInputTextFlags_EnterReturnsTrue);
+        ImGui::SameLine();
+        if (ImGui::Button("添加")) add = true;
+        if (add && g_kwInput[0] && g_kw.count < GI_MAX_KEYWORDS) {
+            wchar_t w[64];
+            if (MultiByteToWideChar(CP_UTF8, 0, g_kwInput, -1, w, 64) > 1) {
+                wcscpy(g_kw.items[g_kw.count++], w);
+                save_title_keywords(&g_kw);
+                g_kwInput[0] = '\0';
+                rescan();
+            }
+        }
+        if (delIdx >= 0) { // 删除自定义关键词
+            for (int i = delIdx; i < g_kw.count - 1; ++i)
+                wcscpy(g_kw.items[i], g_kw.items[i + 1]);
+            g_kw.count--;
+            save_title_keywords(&g_kw);
+            rescan();
+        }
+        ImGui::Unindent(8);
+    }
+    ImGui::Spacing();
+
     ImGui::TextDisabled("检测到的游戏实例（%d）", (int)g_instances.size());
     ImGui::Spacing();
 
@@ -312,15 +378,8 @@ static void draw_ui() {
                          - injectW - 10 - refreshW);
 
     ImGui::BeginDisabled(g_injecting);
-    if (ImGui::Button("刷新", ImVec2(refreshW, btnH))) {
-        g_instances.clear();
-        g_selected = -1;
-        GameInstance items[16];
-        int n = scan_game_instances(items, 16);
-        g_instances.assign(items, items + n);
-        if (n > 0) g_selected = 0;
-        g_resultNew = false;
-    }
+    if (ImGui::Button("刷新", ImVec2(refreshW, btnH)))
+        rescan();
     ImGui::SameLine();
     bool canInject = g_selected >= 0 && g_selected < (int)g_instances.size() && !g_injecting;
     if (!g_injecting) {
@@ -393,13 +452,9 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE, LPSTR, int) {
     if (!cn) io.Fonts->AddFontDefault();
     (void)title;
 
-    // 初始扫描
-    {
-        GameInstance items[16];
-        int n = scan_game_instances(items, 16);
-        g_instances.assign(items, items + n);
-        if (n > 0) g_selected = 0;
-    }
+    // 初始加载关键词 + 扫描
+    load_title_keywords(&g_kw);
+    rescan();
 
     MSG msg = {};
     while (msg.message != WM_QUIT) {

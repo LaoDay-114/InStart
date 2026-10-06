@@ -19,6 +19,7 @@ enum BindAction {
 };
 
 // 用户可调配置（菜单控制）
+// 注意：增删/改序字段后必须递增 config.cpp 中的 CFG_VER，否则旧配置会错位读入
 struct InStartConfig {
     bool  showMenu   = false; // 菜单显示
     bool  hud        = true;  // 坐标 HUD

@@ -28,6 +28,7 @@ target("InStart")
         "src/hooks.cpp",
         "src/menu.cpp",
         "src/config.cpp",
+        "src/nofall.cpp",
         "src/jni/mc.cpp",
         IMGUI .. "/imgui.cpp",
         IMGUI .. "/imgui_draw.cpp",

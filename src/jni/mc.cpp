@@ -10,6 +10,7 @@
 
 #include "mappings.h"
 #include "../config.h"
+#include "../nofall.h"
 
 static JavaVM*  g_vm  = nullptr;
 static JNIEnv*  g_env = nullptr;
@@ -414,6 +415,9 @@ bool mc_jni_init() {
 
     g_env = env;
     g_state.jniReady = true;
+
+    // 无摔落（JVMTI Packet 模式）：失败仅停用该功能
+    nofall_init(g_vm, *g_map, env);
     return true;
 }
 
@@ -561,25 +565,6 @@ void mc_apply_features() {
             env->DeleteLocalRef(world);
         }
         if (env->ExceptionCheck()) env->ExceptionClear();
-    }
-
-    // ---- 无摔落：NoGround=清零两端 fallDistance；FakeGround=额外伪装 onGround=true ----
-    //   单机伤害由内置服务端用服务端玩家判定，只清客户端无效
-    if (g_cfg.noFall) {
-        jobject srvp = get_server_player(env, mc);
-        if (g_map->fallDistType == 'D') {
-            env->SetDoubleField(player, f_ent_fallDistance, 0.0);
-            if (srvp) env->SetDoubleField(srvp, f_ent_fallDistance, 0.0);
-        } else {
-            env->SetFloatField(player, f_ent_fallDistance, 0.0f);
-            if (srvp) env->SetFloatField(srvp, f_ent_fallDistance, 0.0f);
-        }
-        if (g_cfg.noFallMode == 1) { // FakeGround
-            env->SetBooleanField(player, f_onGround, JNI_TRUE);
-            if (srvp) env->SetBooleanField(srvp, f_onGround, JNI_TRUE);
-        }
-        if (env->ExceptionCheck()) env->ExceptionClear();
-        if (srvp) env->DeleteLocalRef(srvp);
     }
 
     // ---- HUD 坐标 ----

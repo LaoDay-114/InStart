@@ -32,8 +32,7 @@ struct InStartConfig {
     bool  esp        = false; // 实体透视（发光轮廓，穿墙可见）
     bool  espMobsOnly= false; // 仅生物（忽略掉落物/矿车等）
     // 保护
-    bool  noFall     = false; // 无摔落伤害
-    int   noFallMode = 0;     // 0=NoGround 清零摔落距离  1=FakeGround 伪装在地面
+    bool  noFall     = false; // 无摔落伤害（Packet 模式：改移动包 onGround）
     // 战斗
     bool  killaura   = false; // 杀戮光环（自动攻击附近生物）
     float auraRange  = 3.0f;  // 杀戮光环范围（格）

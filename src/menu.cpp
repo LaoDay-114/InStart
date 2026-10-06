@@ -150,12 +150,7 @@ void menu_draw() {
         }
         if (ImGui::BeginTabItem("保护")) {
             ImGui::Checkbox("无摔落伤害", &g_cfg.noFall);
-            if (g_cfg.noFall) {
-                // 模式：NoGround=清零摔落距离  FakeGround=伪装在地面
-                const char* modes[] = { "NoGround（清零摔落距离）", "FakeGround（伪装在地面）" };
-                ImGui::SetNextItemWidth(280);
-                ImGui::Combo("方式", &g_cfg.noFallMode, modes, 2);
-            }
+            ImGui::SameLine(); ImGui::TextDisabled("Packet 模式（参考 Meteor）");
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("按键")) {

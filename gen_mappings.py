@@ -46,6 +46,9 @@ WANT_CLASSES = {
     "net/minecraft/entity/attribute/EntityAttributes",
     "net/minecraft/entity/mob/MobEntity",
     "net/minecraft/registry/entry/RegistryEntry",
+    "net/minecraft/client/network/ClientCommonNetworkHandler",
+    "net/minecraft/network/packet/c2s/play/PlayerMoveC2SPacket",
+    "net/minecraft/util/math/Vec3d",
 }
 
 # ---- 需要的成员: (yarn类全名, f/m, yarn成员名, 描述符过滤或None) ----
@@ -98,7 +101,15 @@ WANT_MEMBERS = [
     # FakeGround：onGround 伪装
     ("net/minecraft/entity/Entity", "f", "onGround", "Z"),
     ("net/minecraft/entity/Entity", "m", "isSprinting", "()Z"),
+    # NoFall(Packet 模式，参考 Meteor)：sendPacket 断点 + 移动包 onGround
+    # 不用描述符过滤：参数 Packet 的官方短名每版本变化
+    ("net/minecraft/client/network/ClientCommonNetworkHandler", "m", "sendPacket", None),
+    ("net/minecraft/network/packet/c2s/play/PlayerMoveC2SPacket", "f", "onGround", "Z"),
+    ("net/minecraft/entity/Entity", "m", "getVelocity", None),
+    ("net/minecraft/util/math/Vec3d", "f", "y", "D"),
 ]
+# isFallFlying/isGliding（yarn 名 1.21.2 起变更，intermediary 均为 method_6128）
+# 声明位置跨版本在 Entity/LivingEntity 间漂移，build_record 中手工兜底解析
 
 
 def fetch(url, binary=False):
@@ -216,6 +227,9 @@ def build_record(mcver, classes, classes_official, members):
         "clsEntityAttributes": cls("net/minecraft/entity/attribute/EntityAttributes"),
         "clsMobEntity": cls("net/minecraft/entity/mob/MobEntity"),
         "clsRegistryEntry": cls("net/minecraft/registry/entry/RegistryEntry"),
+        "clsCommonNetHandler": cls("net/minecraft/client/network/ClientCommonNetworkHandler"),
+        "clsMovePacket": cls("net/minecraft/network/packet/c2s/play/PlayerMoveC2SPacket"),
+        "clsVec3d": cls("net/minecraft/util/math/Vec3d"),
         "mGetInstance": mem("net/minecraft/client/MinecraftClient", "m", "getInstance")[0],
         "mGetGameVersion": mem("net/minecraft/client/MinecraftClient", "m", "getGameVersion")[0],
         "mSendAbilitiesUpdate": mem("net/minecraft/entity/player/PlayerEntity", "m", "sendAbilitiesUpdate")[0],
@@ -263,6 +277,16 @@ def build_record(mcver, classes, classes_official, members):
         "mSetBaseValue": mem("net/minecraft/entity/attribute/EntityAttributeInstance", "m", "setBaseValue")[0],
         "fOnGround": mem("net/minecraft/entity/Entity", "f", "onGround")[0],
         "mIsSprinting": mem("net/minecraft/entity/Entity", "m", "isSprinting")[0],
+        "mSendPacket": mem("net/minecraft/client/network/ClientCommonNetworkHandler", "m", "sendPacket")[0],
+        "fPktOnGround": mem("net/minecraft/network/packet/c2s/play/PlayerMoveC2SPacket", "f", "onGround")[0],
+        "mGetVelocity": mem("net/minecraft/entity/Entity", "m", "getVelocity")[0],
+        "mIsFallFlying": pick(
+            members.get(("net/minecraft/entity/LivingEntity", "m", "isFallFlying"))
+            or members.get(("net/minecraft/entity/LivingEntity", "m", "isGliding"))
+            or members.get(("net/minecraft/entity/Entity", "m", "isFallFlying"))
+            or members[("net/minecraft/entity/Entity", "m", "isGliding")],
+            "()Z", f"{mcver} isFallFlying/isGliding")[0],
+        "fVecY": mem("net/minecraft/util/math/Vec3d", "f", "y")[0],
     }
     # 移动速度属性字段：1.21.2+ 为 MOVEMENT_SPEED，1.21/1.21.1 为 GENERIC_MOVEMENT_SPEED
     for n in ("MOVEMENT_SPEED", "GENERIC_MOVEMENT_SPEED"):
@@ -287,7 +311,7 @@ FIELD_ORDER = [
     "clsSlotActionType", "clsPlayerScreenHandler", "clsScreen", "clsDefaultedList",
     "clsMinecraftServer", "clsPlayerManager", "clsAttributeContainer",
     "clsAttributeInstance", "clsEntityAttributes", "clsMobEntity",
-    "clsRegistryEntry",
+    "clsRegistryEntry", "clsCommonNetHandler", "clsMovePacket", "clsVec3d",
     "mGetInstance", "mGetGameVersion", "mSendAbilitiesUpdate",
     "mGetX", "mGetY", "mGetZ", "mSetValue", "mGetEntities", "mSetGlowing",
     "mAttackEntity", "mClickSlot", "mGetInventory", "mGetOffHandStack", "mDeadOrDying",
@@ -299,7 +323,8 @@ FIELD_ORDER = [
     "fItemsTotem", "fSlotSwap", "fInvMain",
     "mGetServer", "mGetPlayerManager", "mGetPlayerList",
     "mGetAttributes", "mAttrGet", "mSetBaseValue", "fMovementSpeed", "fOnGround",
-    "mIsSprinting",
+    "mIsSprinting", "mSendPacket", "fPktOnGround",
+    "mGetVelocity", "mIsFallFlying", "fVecY",
 ]
 
 HEADER = """// ============================================================
@@ -336,6 +361,9 @@ struct McVerMap {
     const char* clsEntityAttributes;
     const char* clsMobEntity;       // 杀戮光环排除生物判断
     const char* clsRegistryEntry;  // 属性 RegistryEntry（取 MOVEMENT_SPEED 用）
+    const char* clsCommonNetHandler; // ClientCommonNetworkHandler（sendPacket 断点）
+    const char* clsMovePacket;     // PlayerMoveC2SPacket（onGround 字段）
+    const char* clsVec3d;          // Vec3d（速度分量 y）
     // ---- 方法（intermediary 名）----
     const char* mGetInstance;       // MinecraftClient.getInstance()
     const char* mGetGameVersion;    // MinecraftClient.getGameVersion()
@@ -382,6 +410,12 @@ struct McVerMap {
     const char* fMovementSpeed;     // EntityAttributes.MOVEMENT_SPEED（旧名 GENERIC_MOVEMENT_SPEED）
     const char* fOnGround;          // Entity.onGround（FakeGround 用）
     const char* mIsSprinting;      // Entity.isSprinting（加速属性保留冲刺倍率）
+    // NoFall Packet 模式（参考 Meteor）
+    const char* mSendPacket;       // ClientCommonNetworkHandler.sendPacket(Packet)
+    const char* fPktOnGround;      // PlayerMoveC2SPacket.onGround
+    const char* mGetVelocity;      // Entity.getVelocity() Vec3d
+    const char* mIsFallFlying;     // Entity.isFallFlying()（滑翔时不改）
+    const char* fVecY;             // Vec3d.y
 };
 
 static const McVerMap g_mcVerMaps[] = {

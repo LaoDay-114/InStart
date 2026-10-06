@@ -17,7 +17,7 @@ static wchar_t g_cfgPath[MAX_PATH] = {};
 // （典型症状：bind[0] 读到旧 bind[1]，菜单快捷键失效）。
 // 修改 InStartConfig 布局时必须递增 CFG_VER。
 static const uint32_t CFG_MAGIC = 0x54534E49; // "INST" 小端
-static const uint32_t CFG_VER   = 3;          // 当前布局版本
+static const uint32_t CFG_VER   = 4;          // 当前布局版本
 struct CfgHeader { uint32_t magic; uint32_t ver; uint32_t size; };
 
 void config_init_path(void* moduleHandle) {
@@ -100,7 +100,6 @@ void config_sanitize() {
     if (!in_range(g_cfg.flySpeed, 0.5f, 8.0f))  { g_cfg.flySpeed  = 2.0f; fixed = true; }
     if (!in_range(g_cfg.speedMult, 1.1f, 5.0f)) { g_cfg.speedMult = 2.0f; fixed = true; }
     if (!in_range(g_cfg.auraRange, 1.5f, 5.0f)) { g_cfg.auraRange = 3.0f; fixed = true; }
-    if (g_cfg.noFallMode < 0 || g_cfg.noFallMode > 1) { g_cfg.noFallMode = 0; fixed = true; }
 
     // 快捷键：无效 VK（指向不存在的键/模块）→ 未绑定
     for (int i = 0; i < BIND_COUNT; ++i) {

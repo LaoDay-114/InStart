@@ -201,8 +201,7 @@ static void poll_keybinds() {
         if (!g_cfg.showMenu) config_save();
     }
 
-    // 功能快捷键（仅当版本兼容时才有意义）
-    if (!g_cfg.versionOk) return;
+    // 功能快捷键
     if (key_edge(g_cfg.bind[BIND_FLY]))        g_cfg.fly        = !g_cfg.fly;
     if (key_edge(g_cfg.bind[BIND_SPEED]))      g_cfg.speed      = !g_cfg.speed;
     if (key_edge(g_cfg.bind[BIND_FULLBRIGHT])) g_cfg.fullbright = !g_cfg.fullbright;

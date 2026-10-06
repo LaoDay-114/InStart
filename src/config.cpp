@@ -32,7 +32,6 @@ void config_load() {
     fclose(f);
     // 运行时字段不随配置恢复
     g_cfg.showMenu  = false;
-    g_cfg.versionOk = true;
 }
 
 void config_save() {

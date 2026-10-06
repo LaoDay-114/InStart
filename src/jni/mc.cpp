@@ -134,13 +134,18 @@ static bool detect_version(JNIEnv* env, jclass mcCls, jobject mc, char out[64]) 
     return true;
 }
 
-// 按版本号查映射表；找到返回 true 并设置 g_map
+// 按版本号查映射表；找到返回 true 并设置 g_map。
+// 无精确匹配时回退到映射表中不高于该版本的最新一条（JNI 解析失败会自动停用，不会崩溃）
 static bool pick_mappings(const char* version) {
     for (int i = 0; i < g_mcVerMapsCount; ++i) {
         if (strcmp(g_mcVerMaps[i].version, version) == 0) {
             g_map = &g_mcVerMaps[i];
             return true;
         }
+    }
+    if (g_mcVerMapsCount > 0) { // 回退：最新映射
+        g_map = &g_mcVerMaps[g_mcVerMapsCount - 1];
+        return true;
     }
     return false;
 }
@@ -198,7 +203,6 @@ static bool extract_base_version(const char* ver, char* out, size_t outsz) {
 
 bool mc_jni_init() {
     if (g_env) return true;
-    if (!g_cfg.versionOk) return false; // 已判定不兼容，不再重试
 
     // 1. 取进程内已存在的 JVM（jvm.dll 已随 javaw.exe 加载）
     if (!g_vm) {
@@ -234,12 +238,11 @@ bool mc_jni_init() {
     strncpy(g_state.version, ver, sizeof g_state.version - 1);
     env->DeleteLocalRef(bootMc);
 
-    // 4. 剥离 Fabric 加载器后缀后按版本选映射；不兼容则停用功能并提示
+    // 4. 剥离 Fabric 加载器后缀后按版本选映射；无法剥离时直接用原串查表，
+    //    无精确匹配则回退最新映射（解析失败会自动停用功能，不做版本阻断）
     char base[64] = {};
-    if (!extract_base_version(ver, base, sizeof base) || !pick_mappings(base)) {
-        g_cfg.versionOk = false;
-        return false;
-    }
+    const char* key = extract_base_version(ver, base, sizeof base) ? base : ver;
+    if (!pick_mappings(key)) return false;
 
     // 5. 用当前版本映射表解析全部类/方法/字段
     const McVerMap& M = *g_map;
@@ -365,7 +368,6 @@ bool mc_jni_init() {
 }
 
 void mc_apply_features() {
-    if (!g_cfg.versionOk) return;      // 版本不兼容，全部停用
     if (!g_env && !mc_jni_init()) return;
     JNIEnv* env = g_env;
     if (env->ExceptionCheck()) env->ExceptionClear();

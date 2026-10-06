@@ -50,14 +50,6 @@ void menu_draw() {
     ImFont* font = ImGui::GetFont();
     ImGuiIO& io = ImGui::GetIO();
 
-    // ---- 版本不兼容提示（常驻红字，优先级最高）----
-    if (!g_cfg.versionOk) {
-        char buf[128];
-        snprintf(buf, sizeof buf, "InStart：版本不兼容（当前 %s，仅支持 1.21 ~ 1.21.11）",
-                 g_state.version[0] ? g_state.version : "未知");
-        draw_banner(dl, font, buf, IM_COL32(255, 80, 80, 255));
-    }
-
     // ---- 注入完成提示（绿色横幅，几秒后淡出）----
     if (!g_state.injectShown && g_state.jniReady) {
         g_state.injectShown = true;
@@ -74,7 +66,7 @@ void menu_draw() {
     }
 
     // ---- 左上角：坐标 HUD（带背景）----
-    if (g_cfg.hud && g_cfg.versionOk) {
+    if (g_cfg.hud) {
         char buf[160];
         if (g_state.inGame)
             snprintf(buf, sizeof buf, "InStart  |  X: %.1f  Y: %.1f  Z: %.1f",
@@ -85,7 +77,7 @@ void menu_draw() {
     }
 
     // ---- 右上角：已启用功能列表（彩虹 ArrayList）----
-    if (g_cfg.versionOk) {
+    {
         struct { bool on; const char* name; } feats[] = {
             { g_cfg.fly,        "飞行" },
             { g_cfg.speed,      "加速" },
@@ -208,11 +200,6 @@ void menu_draw() {
             ImGui::Text("JNI 初始化: %s", g_state.jniReady ? "完成" : "进行中...");
             ImGui::Text("游戏状态:   %s", g_state.inGame ? "已进入世界" : "未进入世界");
             ImGui::Text("游戏版本:   %s", g_state.version[0] ? g_state.version : "未知");
-            ImGui::Separator();
-            if (g_cfg.versionOk)
-                ImGui::TextDisabled("版本兼容：1.21 ~ 1.21.11");
-            else
-                ImGui::TextColored(ImVec4(1, 0.3f, 0.3f, 1), "版本不兼容，功能已停用");
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();

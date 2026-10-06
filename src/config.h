@@ -42,8 +42,6 @@ struct InStartConfig {
     // 按键绑定（Windows VK 码，0 表示未绑定）
     // 默认：菜单=右 Alt（否则无法呼出菜单），功能键全部无绑定，需在"按键"页手动设置
     int   bind[10]   = { 0xA5 /*VK_RMENU*/, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
-    // 版本兼容状态
-    bool  versionOk  = true;  // false = 检测到不兼容版本，功能全部停用
 };
 
 // 运行时状态（JNI 层回填）

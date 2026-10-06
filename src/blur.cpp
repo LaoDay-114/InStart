@@ -167,6 +167,7 @@ void blur_apply() {
     // ---- 保存游戏 GL 状态 ----
     GLint prevProg = 0, prevVao = 0;
     GLint prevBlendEq = 0, prevFrontFace = 0;
+    GLint prevBlendSrc = 0, prevBlendDst = 0;
     GLint prevReadFbo = 0, prevDrawFbo = 0, prevReadBuf = 0;
     GLint prevVp[4] = {};
     GLboolean prevBlend   = glIsEnabled(GL_BLEND);
@@ -183,6 +184,8 @@ void blur_apply() {
     glGetIntegerv(GL_CURRENT_PROGRAM, &prevProg);
     glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &prevVao);
     glGetIntegerv(GL_BLEND_EQUATION_RGB, &prevBlendEq);
+    glGetIntegerv(GL_BLEND_SRC_ALPHA, &prevBlendSrc);
+    glGetIntegerv(GL_BLEND_DST_ALPHA, &prevBlendDst);
     glGetIntegerv(GL_FRONT_FACE, &prevFrontFace);
     glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &prevReadFbo);
     glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &prevDrawFbo);
@@ -224,17 +227,22 @@ void blur_apply() {
     g_prevValid = true;
 
     // ---- 恢复游戏 GL 状态 ----
+    // 顺序关键：必须先恢复 FBO 绑定，再恢复 read buffer —— 游戏原 FBO 的
+    // read buffer 通常是 GL_COLOR_ATTACHMENT0，在默认 FBO 0 上设置该值会
+    // 产生 GL_INVALID_ENUM（默认帧缓冲只接受 GL_BACK/GL_NONE）
+    pglBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)prevReadFbo);
+    pglBindFramebuffer(GL_DRAW_FRAMEBUFFER, (GLuint)prevDrawFbo);
+    glReadBuffer((GLenum)prevReadBuf);
+
     glBindVertexArray((GLuint)prevVao);
     glUseProgram((GLuint)prevProg);
     glBindTexture(GL_TEXTURE_2D, (GLuint)prevTex0);
     glBlendEquation((GLenum)prevBlendEq);
-    glReadBuffer((GLenum)prevReadBuf);
+    glBlendFunc((GLenum)prevBlendSrc, (GLenum)prevBlendDst);
     glViewport((GLint)prevVp[0], (GLint)prevVp[1],
                (GLint)prevVp[2], (GLint)prevVp[3]);
     glColorMask(prevMask[0], prevMask[1], prevMask[2], prevMask[3]);
     glFrontFace((GLenum)prevFrontFace);
-    pglBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)prevReadFbo);
-    pglBindFramebuffer(GL_DRAW_FRAMEBUFFER, (GLuint)prevDrawFbo);
     if (prevBlend)   glEnable(GL_BLEND);   else glDisable(GL_BLEND);
     if (prevDepth)   glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
     if (prevScissor) glEnable(GL_SCISSOR_TEST); else glDisable(GL_SCISSOR_TEST);

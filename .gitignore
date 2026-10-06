@@ -4,6 +4,8 @@ build/
 InStart.dll
 InStart.dll.a
 InStartInjector.exe
+InStart.exe
+InStartConfig/
 *.map
 
 # 打包/临时

@@ -14,7 +14,6 @@
 #include "hooks.h"
 #include "config.h"
 #include "menu.h"
-#include "blur.h"
 #include "jni/mc.h"
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND, UINT, WPARAM, LPARAM);
@@ -208,7 +207,6 @@ static void poll_keybinds() {
     if (key_edge(g_cfg.bind[BIND_ESP]))        g_cfg.esp        = !g_cfg.esp;
     if (key_edge(g_cfg.bind[BIND_NOFALL]))     g_cfg.noFall     = !g_cfg.noFall;
     if (key_edge(g_cfg.bind[BIND_HUD]))    g_cfg.hud        = !g_cfg.hud;
-    if (key_edge(g_cfg.bind[BIND_BLUR]))   g_cfg.motionBlur = !g_cfg.motionBlur;
     if (key_edge(g_cfg.bind[BIND_KILLAURA])) g_cfg.killaura = !g_cfg.killaura;
     if (key_edge(g_cfg.bind[BIND_TOTEM]))    g_cfg.autoTotem = !g_cfg.autoTotem;
 }
@@ -218,9 +216,6 @@ void hooks_set_bind_waiting(int idx) { g_bindWaiting = idx; }
 int  hooks_get_bind_waiting()        { return g_bindWaiting; }
 
 void hooks_frame() {
-    // 0. 动态模糊：游戏帧已渲染完成，在 ImGui 绘制前做帧累积（菜单不受影响）
-    blur_apply();
-
     // 1. 应用功能（写入游戏对象 / 回填坐标）—— 在游戏渲染线程上执行
     mc_apply_features();
 

@@ -84,7 +84,6 @@ void menu_draw() {
             { g_cfg.fullbright, "全亮" },
             { g_cfg.esp,        "实体透视" },
             { g_cfg.noFall,     "无摔落" },
-            { g_cfg.motionBlur, "动态模糊" },
             { g_cfg.killaura,   "杀戮光环" },
             { g_cfg.autoTotem,  "自动图腾" },
         };
@@ -133,10 +132,6 @@ void menu_draw() {
             if (g_cfg.esp) {
                 ImGui::Checkbox("仅生物（忽略掉落物/矿车）", &g_cfg.espMobsOnly);
             }
-            ImGui::Checkbox("动态模糊", &g_cfg.motionBlur);
-            ImGui::SameLine(); ImGui::TextDisabled("帧累积拖影");
-            if (g_cfg.motionBlur)
-                ImGui::SliderFloat("模糊强度", &g_cfg.blurAmount, 0.1f, 0.95f, "%.2f");
             ImGui::Checkbox("坐标 HUD", &g_cfg.hud);
             ImGui::EndTabItem();
         }
@@ -176,7 +171,6 @@ void menu_draw() {
                 { "实体透视",      BIND_ESP },
                 { "无摔落",        BIND_NOFALL },
                 { "坐标 HUD", BIND_HUD },
-                { "动态模糊", BIND_BLUR },
                 { "杀戮光环", BIND_KILLAURA },
                 { "自动图腾", BIND_TOTEM },
             };

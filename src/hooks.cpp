@@ -173,9 +173,16 @@ static bool key_edge(int vk) {
 static void poll_keybinds() {
     // 正在等待绑定某个按键
     if (g_bindWaiting >= 0 && g_bindWaiting < BIND_COUNT) {
+        // Esc / Delete = 清除该绑定（设为"未绑定"）
+        if (key_edge(VK_ESCAPE) || key_edge(VK_DELETE)) {
+            g_cfg.bind[g_bindWaiting] = 0;
+            g_bindWaiting = -1;
+            config_save();
+            return;
+        }
         // 扫所有可绑定的键：字母、数字、功能键、方向键、小键盘等
         for (int vk = 0x08; vk <= 0xFE; ++vk) {
-            // 跳过鼠标键和菜单键自身
+            // 跳过鼠标键
             if (vk == VK_LBUTTON || vk == VK_RBUTTON || vk == VK_MBUTTON) continue;
             if (key_edge(vk)) {
                 g_cfg.bind[g_bindWaiting] = vk;

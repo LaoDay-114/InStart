@@ -162,7 +162,7 @@ void menu_draw() {
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("按键")) {
-            ImGui::TextDisabled("点击右侧按钮后按下新按键即可修改");
+            ImGui::TextDisabled("点击右侧按钮后按下新按键即可修改（按 Esc/Delete 清除绑定）");
             ImGui::Separator();
 
             struct BindItem { const char* name; int action; };

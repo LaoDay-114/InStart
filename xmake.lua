@@ -65,3 +65,21 @@ target("InStartInjector")
     add_defines("UNICODE", "_UNICODE")
     add_syslinks("user32")
     add_ldflags("-static", "-static-libgcc", "-static-libstdc++", {force = true})
+
+-- ---------- InStart.exe：启动器（现代 UI，调用注入器完成注入） ----------
+target("InStartLauncher")
+    set_kind("binary")
+    set_targetdir(".")
+    set_basename("InStart")
+    add_files(
+        "launcher/main.cpp",
+        IMGUI .. "/imgui.cpp",
+        IMGUI .. "/imgui_draw.cpp",
+        IMGUI .. "/imgui_tables.cpp",
+        IMGUI .. "/imgui_widgets.cpp",
+        IMGUI .. "/backends/imgui_impl_win32.cpp",
+        IMGUI .. "/backends/imgui_impl_dx11.cpp")
+    add_includedirs(IMGUI, IMGUI .. "/backends")
+    add_defines("UNICODE", "_UNICODE")
+    add_syslinks("d3d11", "dxgi", "d3dcompiler", "dwmapi", "user32", "gdi32")
+    add_ldflags("-static", "-static-libgcc", "-static-libstdc++", {force = true})

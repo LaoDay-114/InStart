@@ -1,0 +1,95 @@
+name: build-release
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'src/**'
+      - 'injector/**'
+      - 'launcher/**'
+      - 'xmake.lua'
+      - '.github/workflows/release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: MinGW
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: mingw-w64-x86_64-gcc
+
+      - name: JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: latest
+
+      - name: 构建
+        shell: bash
+        run: |
+          xmake f -p mingw --mingw='C:\msys64\mingw64' -m release -y
+          xmake -j4
+
+      - name: 发布变更文件
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+
+          prev_tag=$(gh release view --json tagName -q .tagName || true)
+          if [ -n "$prev_tag" ]; then
+            prev_sha=$(git rev-list -n1 "$prev_tag")
+          fi
+
+          changed() {
+            [ -z "$prev_sha" ] && return 0
+            if git diff --quiet "$prev_sha" HEAD -- "$@"; then return 1; else return 0; fi
+          }
+
+          assets=()
+          {
+            echo "## 更新内容"
+            if [ -n "$prev_sha" ]; then
+              git -c core.quotepath=false log "$prev_sha..HEAD" --pretty=format:'- %s'
+            else
+              git -c core.quotepath=false log HEAD --pretty=format:'- %s'
+            fi
+            echo
+            echo
+            echo "## 本次文件"
+          } > notes.md
+
+          if [ -z "$prev_sha" ] || changed xmake.lua .github; then
+            assets=(InStart.dll InStartInjector.exe InStart.exe)
+          else
+            changed src && assets+=(InStart.dll)
+            changed injector && assets+=(InStartInjector.exe)
+            if changed launcher injector/game_instances.h; then
+              assets+=(InStart.exe)
+            fi
+          fi
+
+          for f in "${assets[@]}"; do
+            echo "- $f" >> notes.md
+          done
+
+          tag="build-$(date -u +%Y%m%d-%H%M)-${GITHUB_SHA::7}"
+          gh release create "$tag" "${assets[@]}" \
+            --title "自动构建 $(date -u +%Y-%m-%d)" \
+            --notes-file notes.md

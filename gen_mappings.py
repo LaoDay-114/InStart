@@ -39,6 +39,13 @@ WANT_CLASSES = {
     "net/minecraft/screen/PlayerScreenHandler",
     "net/minecraft/client/gui/screen/Screen",
     "net/minecraft/util/collection/DefaultedList",
+    "net/minecraft/server/MinecraftServer",
+    "net/minecraft/server/PlayerManager",
+    "net/minecraft/entity/attribute/AttributeContainer",
+    "net/minecraft/entity/attribute/EntityAttributeInstance",
+    "net/minecraft/entity/attribute/EntityAttributes",
+    "net/minecraft/entity/mob/MobEntity",
+    "net/minecraft/registry/entry/RegistryEntry",
 }
 
 # ---- 需要的成员: (yarn类全名, f/m, yarn成员名, 描述符过滤或None) ----
@@ -77,6 +84,20 @@ WANT_MEMBERS = [
     ("net/minecraft/item/ItemStack", "m", "getItem", None),
     ("net/minecraft/item/Items", "f", "TOTEM_OF_UNDYING", None),
     ("net/minecraft/screen/slot/SlotActionType", "f", "SWAP", None),
+    # 内置服务端玩家链路（单机伤害由服务端判定）
+    ("net/minecraft/client/MinecraftClient", "m", "getServer", None),
+    ("net/minecraft/server/MinecraftServer", "m", "getPlayerManager", None),
+    ("net/minecraft/server/PlayerManager", "m", "getPlayerList", "()Ljava/util/List;"),
+    # 移动速度属性（加速直接写属性，绕过 abilities 同步的不确定性）
+    ("net/minecraft/entity/LivingEntity", "m", "getAttributes", None),
+    ("net/minecraft/entity/attribute/AttributeContainer", "m", "get", None),
+    ("net/minecraft/entity/attribute/AttributeContainer", "m", "getCustomInstance", None),
+    ("net/minecraft/entity/attribute/EntityAttributeInstance", "m", "setBaseValue", "(D)V"),
+    ("net/minecraft/entity/attribute/EntityAttributes", "f", "MOVEMENT_SPEED", None),
+    ("net/minecraft/entity/attribute/EntityAttributes", "f", "GENERIC_MOVEMENT_SPEED", None),
+    # FakeGround：onGround 伪装
+    ("net/minecraft/entity/Entity", "f", "onGround", "Z"),
+    ("net/minecraft/entity/Entity", "m", "isSprinting", "()Z"),
 ]
 
 
@@ -180,6 +201,13 @@ def build_record(mcver, classes, members):
         "clsPlayerScreenHandler": cls("net/minecraft/screen/PlayerScreenHandler"),
         "clsScreen": cls("net/minecraft/client/gui/screen/Screen"),
         "clsDefaultedList": cls("net/minecraft/util/collection/DefaultedList"),
+        "clsMinecraftServer": cls("net/minecraft/server/MinecraftServer"),
+        "clsPlayerManager": cls("net/minecraft/server/PlayerManager"),
+        "clsAttributeContainer": cls("net/minecraft/entity/attribute/AttributeContainer"),
+        "clsAttributeInstance": cls("net/minecraft/entity/attribute/EntityAttributeInstance"),
+        "clsEntityAttributes": cls("net/minecraft/entity/attribute/EntityAttributes"),
+        "clsMobEntity": cls("net/minecraft/entity/mob/MobEntity"),
+        "clsRegistryEntry": cls("net/minecraft/registry/entry/RegistryEntry"),
         "mGetInstance": mem("net/minecraft/client/MinecraftClient", "m", "getInstance")[0],
         "mGetGameVersion": mem("net/minecraft/client/MinecraftClient", "m", "getGameVersion")[0],
         "mSendAbilitiesUpdate": mem("net/minecraft/entity/player/PlayerEntity", "m", "sendAbilitiesUpdate")[0],
@@ -215,7 +243,27 @@ def build_record(mcver, classes, members):
         "fGamma": mem("net/minecraft/client/option/GameOptions", "f", "gamma")[0],
         "fItemsTotem": mem("net/minecraft/item/Items", "f", "TOTEM_OF_UNDYING")[0],
         "fSlotSwap": mem("net/minecraft/screen/slot/SlotActionType", "f", "SWAP")[0],
+        "mGetServer": mem("net/minecraft/client/MinecraftClient", "m", "getServer")[0],
+        "mGetPlayerManager": mem("net/minecraft/server/MinecraftServer", "m", "getPlayerManager")[0],
+        "mGetPlayerList": mem("net/minecraft/server/PlayerManager", "m", "getPlayerList")[0],
+        "mGetAttributes": mem("net/minecraft/entity/LivingEntity", "m", "getAttributes")[0],
+        # AttributeContainer.get（1.21 为 getCustomInstance），取存在的那个
+        "mAttrGet": pick(
+            members.get(("net/minecraft/entity/attribute/AttributeContainer", "m", "get"),
+                        members[("net/minecraft/entity/attribute/AttributeContainer", "m", "getCustomInstance")]),
+            None, f"{mcver} AttributeContainer.get")[0],
+        "mSetBaseValue": mem("net/minecraft/entity/attribute/EntityAttributeInstance", "m", "setBaseValue")[0],
+        "fOnGround": mem("net/minecraft/entity/Entity", "f", "onGround")[0],
+        "mIsSprinting": mem("net/minecraft/entity/Entity", "m", "isSprinting")[0],
     }
+    # 移动速度属性字段：1.21.2+ 为 MOVEMENT_SPEED，1.21/1.21.1 为 GENERIC_MOVEMENT_SPEED
+    for n in ("MOVEMENT_SPEED", "GENERIC_MOVEMENT_SPEED"):
+        key = ("net/minecraft/entity/attribute/EntityAttributes", "f", n)
+        if key in members:
+            rec["fMovementSpeed"] = members[key][0][0]
+            break
+    else:
+        raise RuntimeError(f"{mcver} 缺少 MOVEMENT_SPEED/GENERIC_MOVEMENT_SPEED")
     inter, desc = mem("net/minecraft/entity/Entity", "f", "fallDistance")
     rec["fFallDistance"] = inter
     rec["fallDistType"] = desc[0]  # 'F' 或 'D'
@@ -229,6 +277,9 @@ FIELD_ORDER = [
     "clsPlayerEntity", "clsPlayerAbilities", "clsEntity", "clsClientWorld", "clsLivingEntity",
     "clsInteractionManager", "clsPlayerInventory", "clsItemStack", "clsItem", "clsItems",
     "clsSlotActionType", "clsPlayerScreenHandler", "clsScreen", "clsDefaultedList",
+    "clsMinecraftServer", "clsPlayerManager", "clsAttributeContainer",
+    "clsAttributeInstance", "clsEntityAttributes", "clsMobEntity",
+    "clsRegistryEntry",
     "mGetInstance", "mGetGameVersion", "mSendAbilitiesUpdate",
     "mGetX", "mGetY", "mGetZ", "mSetValue", "mGetEntities", "mSetGlowing",
     "mAttackEntity", "mClickSlot", "mGetInventory", "mGetOffHandStack", "mDeadOrDying",
@@ -238,6 +289,9 @@ FIELD_ORDER = [
     "fAllowFlying", "fFlying", "fFlySpeed", "fWalkSpeed",
     "fFallDistance", "fallDistType", "fGamma",
     "fItemsTotem", "fSlotSwap", "fInvMain",
+    "mGetServer", "mGetPlayerManager", "mGetPlayerList",
+    "mGetAttributes", "mAttrGet", "mSetBaseValue", "fMovementSpeed", "fOnGround",
+    "mIsSprinting",
 ]
 
 HEADER = """// ============================================================
@@ -267,6 +321,13 @@ struct McVerMap {
     const char* clsPlayerScreenHandler; // 用于 fPlayerScreenHandler 字段描述符
     const char* clsScreen;              // 用于 fMcCurrentScreen 字段描述符
     const char* clsDefaultedList;   // PlayerInventory.main 的声明类型
+    const char* clsMinecraftServer; // 内置服务端（单机伤害判定方）
+    const char* clsPlayerManager;
+    const char* clsAttributeContainer;
+    const char* clsAttributeInstance;
+    const char* clsEntityAttributes;
+    const char* clsMobEntity;       // 杀戮光环排除生物判断
+    const char* clsRegistryEntry;  // 属性 RegistryEntry（取 MOVEMENT_SPEED 用）
     // ---- 方法（intermediary 名）----
     const char* mGetInstance;       // MinecraftClient.getInstance()
     const char* mGetGameVersion;    // MinecraftClient.getGameVersion()
@@ -302,6 +363,17 @@ struct McVerMap {
     const char* fItemsTotem;        // Items.TOTEM_OF_UNDYING（静态字段）
     const char* fSlotSwap;          // SlotActionType.SWAP（静态枚举字段）
     const char* fInvMain;           // PlayerInventory.main（List<ItemStack>）
+    // 内置服务端玩家链路
+    const char* mGetServer;         // MinecraftClient.getServer()
+    const char* mGetPlayerManager;  // MinecraftServer.getPlayerManager()
+    const char* mGetPlayerList;     // PlayerManager.getPlayerList()
+    // 移动速度属性
+    const char* mGetAttributes;     // LivingEntity.getAttributes()
+    const char* mAttrGet;           // AttributeContainer.get(RegistryEntry)
+    const char* mSetBaseValue;      // AttributeInstance.setBaseValue(D)
+    const char* fMovementSpeed;     // EntityAttributes.MOVEMENT_SPEED（旧名 GENERIC_MOVEMENT_SPEED）
+    const char* fOnGround;          // Entity.onGround（FakeGround 用）
+    const char* mIsSprinting;      // Entity.isSprinting（加速属性保留冲刺倍率）
 };
 
 static const McVerMap g_mcVerMaps[] = {

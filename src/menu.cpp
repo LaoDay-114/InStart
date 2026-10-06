@@ -143,14 +143,24 @@ void menu_draw() {
         if (ImGui::BeginTabItem("战斗")) {
             ImGui::Checkbox("杀戮光环", &g_cfg.killaura);
             ImGui::SameLine(); ImGui::TextDisabled("自动攻击最近生物");
-            if (g_cfg.killaura)
+            if (g_cfg.killaura) {
                 ImGui::SliderFloat("攻击范围", &g_cfg.auraRange, 1.5f, 5.0f, "%.1f 格");
+                ImGui::Checkbox("排除玩家", &g_cfg.kaExcludePlayers);
+                ImGui::SameLine(160);
+                ImGui::Checkbox("排除生物", &g_cfg.kaExcludeMobs);
+            }
             ImGui::Checkbox("自动图腾", &g_cfg.autoTotem);
             ImGui::SameLine(); ImGui::TextDisabled("副手无图腾时自动从背包补上");
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("保护")) {
             ImGui::Checkbox("无摔落伤害", &g_cfg.noFall);
+            if (g_cfg.noFall) {
+                // 模式：NoGround=清零摔落距离  FakeGround=伪装在地面
+                const char* modes[] = { "NoGround（清零摔落距离）", "FakeGround（伪装在地面）" };
+                ImGui::SetNextItemWidth(280);
+                ImGui::Combo("方式", &g_cfg.noFallMode, modes, 2);
+            }
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("按键")) {

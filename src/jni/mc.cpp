@@ -20,7 +20,9 @@ static jclass c_MinecraftClient, c_GameOptions, c_SimpleOption,
               c_PlayerAbilities, c_PlayerEntity, c_Double,
               c_ClientWorld, c_LivingEntity,
               c_InteractionManager, c_PlayerInventory, c_ItemStack,
-              c_Items, c_SlotActionType;
+              c_Items, c_SlotActionType,
+              c_MinecraftServer, c_PlayerManager, c_AttributeContainer,
+              c_AttributeInstance, c_EntityAttributes, c_MobEntity;
 
 // ---- 缓存的方法 ----
 static jmethodID m_getInstance;          // MinecraftClient.getInstance()
@@ -39,6 +41,14 @@ static jmethodID m_deadOrDying;          // LivingEntity.isDeadOrDying()（1.21 
 static jmethodID m_stackIsEmpty;         // ItemStack.isEmpty()
 static jmethodID m_stackGetItem;         // ItemStack.getItem()
 static jmethodID m_list_size, m_list_get; // java.util.List.size/get
+// 内置服务端 / 属性
+static jmethodID m_getServer;            // MinecraftClient.getServer()
+static jmethodID m_getPlayerManager;     // MinecraftServer.getPlayerManager()
+static jmethodID m_getPlayerList;        // PlayerManager.getPlayerList()
+static jmethodID m_getAttributes;        // LivingEntity.getAttributes()
+static jmethodID m_attrGet;              // AttributeContainer.get/getCustomInstance
+static jmethodID m_setBaseValue;         // AttributeInstance.setBaseValue(double)
+static jmethodID m_isSprinting;          // Entity.isSprinting()
 
 // ---- 缓存的字段 ----
 static jfieldID f_mc_player;             // MinecraftClient.player
@@ -52,10 +62,12 @@ static jfieldID f_ent_fallDistance;      // Entity.fallDistance（签名随版�
 static jfieldID f_go_gamma;              // GameOptions.gamma (SimpleOption)
 static jfieldID f_inv_main;              // PlayerInventory.main (List<ItemStack>)
 static jfieldID f_player_screenHandler;  // PlayerEntity.playerScreenHandler（syncId 恒为 0，用于判背包界面打开）
+static jfieldID f_onGround;              // Entity.onGround（FakeGround 用）
 
-// ---- 静态对象（图腾物品 / SWAP 枚举）----
+// ---- 静态对象（图腾物品 / SWAP 枚举 / 移动速度属性）----
 static jobject g_totemItem = nullptr;
 static jobject g_swapAction = nullptr;
+static jobject g_moveSpeedAttr = nullptr; // EntityAttributes.MOVEMENT_SPEED（RegistryEntry）
 
 // ---- 边沿触发的上次状态 ----
 static bool  prevFly = false, prevSpeed = false, prevFb = false, prevEsp = false;
@@ -258,6 +270,12 @@ bool mc_jni_init() {
     RESOLVE_CLASS(c_ItemStack,       M.clsItemStack);
     RESOLVE_CLASS(c_Items,           M.clsItems);
     RESOLVE_CLASS(c_SlotActionType,  M.clsSlotActionType);
+    RESOLVE_CLASS(c_MinecraftServer, M.clsMinecraftServer);
+    RESOLVE_CLASS(c_PlayerManager,   M.clsPlayerManager);
+    RESOLVE_CLASS(c_AttributeContainer, M.clsAttributeContainer);
+    RESOLVE_CLASS(c_AttributeInstance,  M.clsAttributeInstance);
+    RESOLVE_CLASS(c_EntityAttributes,   M.clsEntityAttributes);
+    RESOLVE_CLASS(c_MobEntity,          M.clsMobEntity);
     jclass dbl = find_class(env, "java/lang/Double");
     if (!dbl) return false;
     c_Double = (jclass)env->NewGlobalRef(dbl);
@@ -308,6 +326,23 @@ bool mc_jni_init() {
         RESOLVE_METHOD(m_stackGetItem, c_ItemStack, M.mStackGetItem, msig);
     }
 
+    // 内置服务端链路 / 属性（签名按版本动态拼接）
+    {
+        char msig[192];
+        snprintf(msig, sizeof msig, "()L%s;", M.clsMinecraftServer);
+        RESOLVE_METHOD(m_getServer, c_MinecraftClient, M.mGetServer, msig);
+        snprintf(msig, sizeof msig, "()L%s;", M.clsPlayerManager);
+        RESOLVE_METHOD(m_getPlayerManager, c_MinecraftServer, M.mGetPlayerManager, msig);
+        RESOLVE_METHOD(m_getPlayerList, c_PlayerManager, M.mGetPlayerList,
+                       "()Ljava/util/List;");
+        snprintf(msig, sizeof msig, "()L%s;", M.clsAttributeContainer);
+        RESOLVE_METHOD(m_getAttributes, c_LivingEntity, M.mGetAttributes, msig);
+        snprintf(msig, sizeof msig, "(L%s;)L%s;", M.clsRegistryEntry, M.clsAttributeInstance);
+        RESOLVE_METHOD(m_attrGet, c_AttributeContainer, M.mAttrGet, msig);
+        RESOLVE_METHOD(m_setBaseValue, c_AttributeInstance, M.mSetBaseValue, "(D)V");
+        RESOLVE_METHOD(m_isSprinting, c_PlayerEntity, M.mIsSprinting, "()Z");
+    }
+
     // 字段
     char sig[64];
     snprintf(sig, sizeof sig, "L%s;", M.clsClientPlayerEntity);
@@ -334,6 +369,7 @@ bool mc_jni_init() {
     // fallDistance：1.21.8 及以前是 float(F)，1.21.9+ 是 double(D)
     RESOLVE_FIELD(f_ent_fallDistance, c_PlayerEntity, M.fFallDistance,
                   M.fallDistType == 'D' ? "D" : "F");
+    RESOLVE_FIELD(f_onGround, c_PlayerEntity, M.fOnGround, "Z");
     snprintf(sig, sizeof sig, "L%s;", M.clsSimpleOption);
     RESOLVE_FIELD(f_go_gamma, c_GameOptions, M.fGamma, sig);
 
@@ -362,9 +398,51 @@ bool mc_jni_init() {
         g_swapAction = env->NewGlobalRef(swap);
     }
 
+    // EntityAttributes.MOVEMENT_SPEED（旧名 GENERIC_MOVEMENT_SPEED），类型为 RegistryEntry
+    {
+        char msig[128];
+        snprintf(msig, sizeof msig, "L%s;", M.clsRegistryEntry);
+        jfieldID sf = env->GetStaticFieldID(c_EntityAttributes, M.fMovementSpeed, msig);
+        if (!sf) return false;
+        jobject attr = env->GetStaticObjectField(c_EntityAttributes, sf);
+        if (!attr) return false;
+        g_moveSpeedAttr = env->NewGlobalRef(attr);
+    }
+
     g_env = env;
     g_state.jniReady = true;
     return true;
+}
+
+// 取内置服务端玩家对象（单机世界只有一个）；返回局部引用，调用方负责释放
+static jobject get_server_player(JNIEnv* env, jobject mc) {
+    jobject server = env->CallObjectMethod(mc, m_getServer);
+    if (env->ExceptionCheck() || !server) { env->ExceptionClear(); return nullptr; }
+    jobject mgr = env->CallObjectMethod(server, m_getPlayerManager);
+    env->DeleteLocalRef(server);
+    if (env->ExceptionCheck() || !mgr) { env->ExceptionClear(); return nullptr; }
+    jobject list = env->CallObjectMethod(mgr, m_getPlayerList);
+    env->DeleteLocalRef(mgr);
+    if (env->ExceptionCheck() || !list) { env->ExceptionClear(); return nullptr; }
+    jobject sp = nullptr;
+    if (env->CallIntMethod(list, m_list_size) > 0)
+        sp = env->CallObjectMethod(list, m_list_get, 0);
+    env->DeleteLocalRef(list);
+    if (env->ExceptionCheck()) env->ExceptionClear();
+    return sp;
+}
+
+// 直接设置实体的移动速度属性基础值（绕过 abilities 同步的不确定性）
+static void set_move_speed_attr(JNIEnv* env, jobject ent, double base) {
+    jobject cont = env->CallObjectMethod(ent, m_getAttributes);
+    if (!cont || env->ExceptionCheck()) { env->ExceptionClear(); return; }
+    jobject inst = env->CallObjectMethod(cont, m_attrGet, g_moveSpeedAttr);
+    if (inst && !env->ExceptionCheck()) {
+        env->CallVoidMethod(inst, m_setBaseValue, base);
+        env->DeleteLocalRef(inst);
+    }
+    env->ExceptionClear();
+    env->DeleteLocalRef(cont);
 }
 
 void mc_apply_features() {
@@ -399,7 +477,7 @@ void mc_apply_features() {
             needSync = true;
         }
 
-        // ---- 地面加速 ----
+        // ---- 地面加速：walkSpeed 字段（游戏自身 updateAttributes 会消费它）----
         if (g_cfg.speed) {
             env->SetFloatField(abilities, f_ab_walkSpeed, 0.1f * g_cfg.speedMult);
             if (!prevSpeed || prevSpMult != g_cfg.speedMult) needSync = true;
@@ -410,10 +488,28 @@ void mc_apply_features() {
 
         // 仅在状态变化时同步能力包（避免每帧发包）
         if (needSync) env->CallVoidMethod(player, m_sendAbilitiesUpdate);
+        if (env->ExceptionCheck()) env->ExceptionClear(); // 同步异常不允许外溢
+        env->DeleteLocalRef(abilities);
     }
     prevFly = g_cfg.fly;  prevFlySp = g_cfg.flySpeed;
     prevSpeed = g_cfg.speed; prevSpMult = g_cfg.speedMult;
-    if (abilities) env->DeleteLocalRef(abilities);
+
+    // ---- 地面加速：直接写移动速度属性（客户端+内置服务端玩家）----
+    //   字段同步是间接路径，直接写属性确保最终消费点被命中；保留冲刺 1.3 倍率
+    if (g_cfg.speed || prevSpeed) {
+        float ws = g_cfg.speed ? 0.1f * g_cfg.speedMult : 0.1f;
+        bool sprint = env->CallBooleanMethod(player, m_isSprinting) == JNI_TRUE;
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        set_move_speed_attr(env, player, (double)ws * (sprint ? 1.3 : 1.0));
+
+        jobject srvp = get_server_player(env, mc);
+        if (srvp) {
+            bool sSprint = env->CallBooleanMethod(srvp, m_isSprinting) == JNI_TRUE;
+            if (env->ExceptionCheck()) env->ExceptionClear();
+            set_move_speed_attr(env, srvp, (double)ws * (sSprint ? 1.3 : 1.0));
+            env->DeleteLocalRef(srvp);
+        }
+    }
 
     // ---- 全亮：gamma SimpleOption 设为 16.0 ----
     if (g_cfg.fullbright != prevFb) {
@@ -433,26 +529,27 @@ void mc_apply_features() {
         prevFb = g_cfg.fullbright;
     }
 
-    // ---- ESP：实体发光透视（穿墙可见），每 10 帧遍历一次 ----
-    bool espOffEdge = !g_cfg.esp && prevEsp; // 从开变关的边沿
-    if ((g_cfg.esp && (++espTick % 10 == 0)) || espOffEdge) {
+    // ---- ESP：实体发光透视（穿墙可见），每帧遍历 ----
+    //   开时强制 glowing=true，关时强制 false（同时负责恢复），
+    //   段内异常立即清除，避免后续实体调用被挂起异常静默掐断
+    {
         jobject world = env->GetObjectField(mc, f_mc_world);
-        if (world) {
-            jobject iter = nullptr;
+        if (world && !env->ExceptionCheck()) {
             jobject entities = env->CallObjectMethod(world, m_getEntities);
-            if (entities) iter = env->CallObjectMethod(entities, m_it_iterator);
+            jobject iter = entities ? env->CallObjectMethod(entities, m_it_iterator) : nullptr;
             while (iter && env->CallBooleanMethod(iter, m_it_hasNext)) {
                 jobject ent = env->CallObjectMethod(iter, m_it_next);
                 if (!ent) break;
-                // 跳过玩家自己
-                if (env->IsSameObject(ent, player)) { env->DeleteLocalRef(ent); continue; }
-                if (g_cfg.esp) {
-                    bool match = !g_cfg.espMobsOnly ||
-                                 env->IsInstanceOf(ent, c_LivingEntity);
-                    if (match) env->CallVoidMethod(ent, m_setGlowing, JNI_TRUE);
-                } else {
-                    env->CallVoidMethod(ent, m_setGlowing, JNI_FALSE);
+                if (!env->IsSameObject(ent, player)) {
+                    if (g_cfg.esp) {
+                        bool match = !g_cfg.espMobsOnly ||
+                                     env->IsInstanceOf(ent, c_LivingEntity);
+                        if (match) env->CallVoidMethod(ent, m_setGlowing, JNI_TRUE);
+                    } else {
+                        env->CallVoidMethod(ent, m_setGlowing, JNI_FALSE);
+                    }
                 }
+                if (env->ExceptionCheck()) env->ExceptionClear();
                 env->DeleteLocalRef(ent);
             }
             if (env->ExceptionCheck()) env->ExceptionClear();
@@ -460,15 +557,26 @@ void mc_apply_features() {
             if (entities) env->DeleteLocalRef(entities);
             env->DeleteLocalRef(world);
         }
+        if (env->ExceptionCheck()) env->ExceptionClear();
     }
-    prevEsp = g_cfg.esp;
 
-    // ---- 无摔落伤害：每帧清零摔落距离（签名随版本不同）----
+    // ---- 无摔落：NoGround=清零两端 fallDistance；FakeGround=额外伪装 onGround=true ----
+    //   单机伤害由内置服务端用服务端玩家判定，只清客户端无效
     if (g_cfg.noFall) {
-        if (g_map->fallDistType == 'D')
+        jobject srvp = get_server_player(env, mc);
+        if (g_map->fallDistType == 'D') {
             env->SetDoubleField(player, f_ent_fallDistance, 0.0);
-        else
+            if (srvp) env->SetDoubleField(srvp, f_ent_fallDistance, 0.0);
+        } else {
             env->SetFloatField(player, f_ent_fallDistance, 0.0f);
+            if (srvp) env->SetFloatField(srvp, f_ent_fallDistance, 0.0f);
+        }
+        if (g_cfg.noFallMode == 1) { // FakeGround
+            env->SetBooleanField(player, f_onGround, JNI_TRUE);
+            if (srvp) env->SetBooleanField(srvp, f_onGround, JNI_TRUE);
+        }
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        if (srvp) env->DeleteLocalRef(srvp);
     }
 
     // ---- HUD 坐标 ----
@@ -496,9 +604,15 @@ void mc_apply_features() {
             while (iter && env->CallBooleanMethod(iter, m_it_hasNext)) {
                 jobject ent = env->CallObjectMethod(iter, m_it_next);
                 if (!ent) break;
-                if (!env->IsSameObject(ent, player) &&
-                    env->IsInstanceOf(ent, c_LivingEntity) &&
-                    !env->CallBooleanMethod(ent, m_deadOrDying)) {
+                if (env->ExceptionCheck()) env->ExceptionClear();
+                // 过滤：自己 / 排除玩家 / 排除生物 / 非 LivingEntity / 已死亡
+                bool ok = !env->IsSameObject(ent, player)
+                       && !(g_cfg.kaExcludePlayers && env->IsInstanceOf(ent, c_PlayerEntity))
+                       && !(g_cfg.kaExcludeMobs && env->IsInstanceOf(ent, c_MobEntity))
+                       && env->IsInstanceOf(ent, c_LivingEntity)
+                       && !env->CallBooleanMethod(ent, m_deadOrDying);
+                if (env->ExceptionCheck()) env->ExceptionClear();
+                if (ok) {
                     double dx = env->CallDoubleMethod(ent, m_getX) - px;
                     double dy = env->CallDoubleMethod(ent, m_getY) - py;
                     double dz = env->CallDoubleMethod(ent, m_getZ) - pz;

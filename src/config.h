@@ -35,9 +35,12 @@ struct InStartConfig {
     float blurAmount = 0.75f; // 模糊强度（上帧保留比例 0.1~0.95）
     // 保护
     bool  noFall     = false; // 无摔落伤害
+    int   noFallMode = 0;     // 0=NoGround 清零摔落距离  1=FakeGround 伪装在地面
     // 战斗
     bool  killaura   = false; // 杀戮光环（自动攻击附近生物）
     float auraRange  = 3.0f;  // 杀戮光环范围（格）
+    bool  kaExcludePlayers = false; // 排除玩家
+    bool  kaExcludeMobs    = false; // 排除生物
     bool  autoTotem  = false; // 自动图腾（副手无图腾时自动补上）
     // 按键绑定（Windows VK 码，0 表示未绑定）
     // 默认：菜单=右 Alt（否则无法呼出菜单），功能键全部无绑定，需在"按键"页手动设置

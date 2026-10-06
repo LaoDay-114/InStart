@@ -381,16 +381,17 @@ static void draw_ui() {
     if (ImGui::Button("刷新", ImVec2(refreshW, btnH)))
         rescan();
     ImGui::SameLine();
-    bool canInject = g_selected >= 0 && g_selected < (int)g_instances.size() && !g_injecting;
-    if (!g_injecting) {
+    bool wasInjecting = g_injecting; // 点击后 start_inject 会改变 g_injecting，先保存
+    bool canInject = g_selected >= 0 && g_selected < (int)g_instances.size() && !wasInjecting;
+    if (!wasInjecting) {
         ImGui::PushStyleColor(ImGuiCol_Button, ACCENT);
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ACCENT_H);
     }
     ImGui::BeginDisabled(!canInject);
-    if (ImGui::Button(g_injecting ? "注入中..." : "注  入", ImVec2(injectW, btnH)))
+    if (ImGui::Button(wasInjecting ? "注入中..." : "注  入", ImVec2(injectW, btnH)))
         start_inject(g_instances[g_selected].pid);
     ImGui::EndDisabled();
-    if (!g_injecting) ImGui::PopStyleColor(2);
+    if (!wasInjecting) ImGui::PopStyleColor(2);
     ImGui::EndDisabled();
 
     ImGui::End();

@@ -1,9 +1,7 @@
 #pragma once
-// ============================================================
-// InStart 全局配置与状态（菜单 <-> JNI 功能层共享）
-// ============================================================
+// 全局配置与状态（菜单 <-> JNI 功能层共享）
 
-// 按键绑定项索引（menu/hooks 共用）
+// 按键绑定项索引
 enum BindAction {
     BIND_MENU = 0,   // 呼出/隐藏菜单
     BIND_FLY,        // 飞行
@@ -17,47 +15,45 @@ enum BindAction {
     BIND_COUNT
 };
 
-// 用户可调配置（菜单控制）
-// 注意：增删/改序字段后必须递增 config.cpp 中的 CFG_VER，否则旧配置会错位读入
+// 用户可调配置（菜单控制）。增删/改序字段后递增 config.cpp 的 CFG_VER。
 struct InStartConfig {
-    bool  showMenu   = false; // 菜单显示
-    bool  hud        = true;  // 坐标 HUD
+    bool  showMenu   = false;
+    bool  hud        = true;
     // 移动
-    bool  fly        = false; // 飞行
+    bool  fly        = false;
     float flySpeed   = 2.0f;  // 飞行速度倍率（基础 0.05）
-    bool  speed      = false; // 地面加速
+    bool  speed      = false;
     float speedMult  = 2.0f;  // 速度倍率（基础 0.1）
     // 视觉
-    bool  fullbright = false; // 全亮（gamma=16）
-    bool  esp        = false; // 实体透视（发光轮廓，穿墙可见）
-    bool  espMobsOnly= false; // 仅生物（忽略掉落物/矿车等）
+    bool  fullbright = false; // gamma=16
+    bool  esp        = false; // 发光轮廓，穿墙可见
+    bool  espMobsOnly= false; // 仅生物，忽略掉落物/矿车
     // 保护
-    bool  noFall     = false; // 无摔落伤害（Packet 模式：改移动包 onGround）
+    bool  noFall     = false;
     // 战斗
-    bool  killaura   = false; // 杀戮光环（自动攻击附近生物）
-    float auraRange  = 3.0f;  // 杀戮光环范围（格）
-    bool  kaExcludePlayers = false; // 排除玩家
-    bool  kaExcludeMobs    = false; // 排除生物
-    bool  autoTotem  = false; // 自动图腾（副手无图腾时自动补上）
-    // 按键绑定（Windows VK 码，0 表示未绑定）
-    // 默认：菜单=右 Alt（否则无法呼出菜单），功能键全部无绑定，需在"按键"页手动设置
+    bool  killaura   = false;
+    float auraRange  = 3.0f;
+    bool  kaExcludePlayers = false;
+    bool  kaExcludeMobs    = false;
+    bool  autoTotem  = false;
+
+    // Windows VK 码，0 = 未绑定。默认仅菜单=右 Alt
     int   bind[BIND_COUNT] = { 0xA5 /*VK_RMENU*/ };
 };
 
 // 运行时状态（JNI 层回填）
 struct InStartState {
-    bool   jniReady     = false; // JNI 解析完成
-    bool   inGame       = false; // 已进入世界（player != null）
-    bool   injectShown  = false; // 已显示"注入完成"提示
+    bool   jniReady     = false;
+    bool   inGame       = false;
+    bool   injectShown  = false;
     double px = 0, py = 0, pz = 0;
-    char   version[64]  = {};    // 检测到的游戏版本号
+    char   version[64]  = {};
 };
 
 extern InStartConfig g_cfg;
 extern InStartState  g_state;
 
-// ---- 配置持久化（DLL 同目录的 InStartConfig 文件夹）----
-void config_init_path(void* moduleHandle); // 初始化路径并创建文件夹（启动时调用）
-void config_load();                        // 读取配置（无文件则保持默认值）
-void config_save();                        // 保存当前配置
-void config_sanitize();                    // 校验并自动修正无效/越界/指向不存在模块的配置项
+void config_init_path(void* moduleHandle);
+void config_load();
+void config_save();
+void config_sanitize();

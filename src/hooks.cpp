@@ -1,9 +1,5 @@
-// ============================================================
-// InStart Hook 层：
-//  - MinHook 挂 wglSwapBuffers -> 帧间绘制 ImGui
-//  - 子类化 GLFW 窗口 -> 菜单打开时接管输入
-//  - 快捷键轮询（含菜单呼出键、功能快捷键、按键绑定等待状态）
-// ============================================================
+// Hook 层：MinHook 挂 wglSwapBuffers 做帧渲染，子类化窗口接管菜单输入，
+// 并轮询快捷键与绑定等待状态。
 #include <windows.h>
 #include <cstdio>
 #include <imgui.h>
@@ -18,44 +14,38 @@
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND, UINT, WPARAM, LPARAM);
 
-LRESULT CALLBACK in_wndproc(HWND, UINT, WPARAM, LPARAM); // 前向声明
+LRESULT CALLBACK in_wndproc(HWND, UINT, WPARAM, LPARAM);
 
 static BOOL (WINAPI* o_wglSwapBuffers)(HDC) = nullptr;
 static WNDPROC o_wndproc = nullptr;
 static HWND    g_hwnd = nullptr;
 static bool    g_imguiReady = false;
 
-// 按键绑定等待状态：-1 = 不在等待；>=0 = 等待为 g_cfg.bind[i] 捕获按键
-static int   g_bindWaiting = -1;
-static bool  g_bindPrev[256] = {}; // 各 VK 码上一帧状态，用于边沿触发
+static int   g_bindWaiting = -1; // -1 = 不在等待，否则等待为 bind[i] 捕获按键
+static bool  g_bindPrev[256] = {};
 
-// ---- ImGui + 窗口初始化（首次 wglSwapBuffers 时执行，处于游戏渲染线程）----
 static bool imgui_once_init(HDC hdc) {
     g_hwnd = WindowFromDC(hdc);
     if (!g_hwnd) return false;
 
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
-    io.IniFilename = nullptr;      // 不落盘 imgui.ini
+    io.IniFilename = nullptr;
     io.MouseDrawCursor = g_cfg.showMenu;
 
-    // 加载带中文的字体（微软雅黑优先，逐级回退）
     const char* fonts[] = {
         "C:/Windows/Fonts/msyh.ttc",
         "C:/Windows/Fonts/msyh.ttf",
         "C:/Windows/Fonts/simsun.ttc",
     };
-    bool fontLoaded = false;
     for (const char* f : fonts) {
         if (GetFileAttributesA(f) != INVALID_FILE_ATTRIBUTES) {
-            ImFont* font = io.Fonts->AddFontFromFileTTF(
-                f, 17.0f, nullptr, io.Fonts->GetGlyphRangesChineseSimplifiedCommon());
-            if (font) { fontLoaded = true; break; }
+            if (io.Fonts->AddFontFromFileTTF(
+                    f, 17.0f, nullptr, io.Fonts->GetGlyphRangesChineseSimplifiedCommon()))
+                break;
         }
     }
-    (void)fontLoaded; // 加载失败则退回默认字体（仅英文可显示）
 
-    // 主题：深色 + 圆角 + 青色强调
     ImGui::StyleColorsDark();
     ImGuiStyle& st = ImGui::GetStyle();
     st.WindowRounding = 8.f; st.FrameRounding = 5.f;
@@ -77,17 +67,15 @@ static bool imgui_once_init(HDC hdc) {
     if (!ImGui_ImplWin32_Init(g_hwnd)) return false;
     if (!ImGui_ImplOpenGL3_Init(nullptr)) return false;
 
-    // 子类化游戏窗口
     o_wndproc = (WNDPROC)SetWindowLongPtrW(g_hwnd, GWLP_WNDPROC, (LONG_PTR)in_wndproc);
     return true;
 }
 
-// ---- 消息处理：菜单打开时吞掉游戏输入 ----
 LRESULT CALLBACK in_wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     if (g_imguiReady)
         ImGui_ImplWin32_WndProcHandler(h, msg, wp, lp);
 
-    // 菜单打开时吞掉鼠标/原始输入：点击菜单不会转动视角、误触游戏
+    // 菜单打开时吞掉鼠标输入，点击不会转动视角
     if (g_cfg.showMenu) {
         switch (msg) {
         case WM_INPUT:
@@ -105,7 +93,6 @@ LRESULT CALLBACK in_wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
                      : DefWindowProcW(h, msg, wp, lp);
 }
 
-// ---- wglSwapBuffers Hook：帧间插入我们的渲染 ----
 static BOOL WINAPI hk_wglSwapBuffers(HDC hdc) {
     static bool initDone = false;
     if (!initDone) {
@@ -117,7 +104,6 @@ static BOOL WINAPI hk_wglSwapBuffers(HDC hdc) {
     return o_wglSwapBuffers(hdc);
 }
 
-// 把 VK 码转成可读名字（用于菜单显示）
 const char* hooks_vk_name(int vk, char* buf, size_t len) {
     if (vk <= 0 || vk > 255) { snprintf(buf, len, "未绑定"); return buf; }
     switch (vk) {
@@ -160,7 +146,6 @@ const char* hooks_vk_name(int vk, char* buf, size_t len) {
     }
 }
 
-// 边沿触发检测：vk 从松开变为按下时返回 true
 static bool key_edge(int vk) {
     bool down = (GetAsyncKeyState(vk) & 0x8000) != 0;
     bool edge = down && !g_bindPrev[vk];
@@ -168,61 +153,51 @@ static bool key_edge(int vk) {
     return edge;
 }
 
-// 按键绑定轮询：处理等待绑定 + 常规快捷键
 static void poll_keybinds() {
-    // 正在等待绑定某个按键
     if (g_bindWaiting >= 0 && g_bindWaiting < BIND_COUNT) {
-        // Esc / Delete = 清除该绑定（设为"未绑定"）
+        // Esc / Delete 清除绑定
         if (key_edge(VK_ESCAPE) || key_edge(VK_DELETE)) {
             g_cfg.bind[g_bindWaiting] = 0;
             g_bindWaiting = -1;
             config_save();
             return;
         }
-        // 扫所有可绑定的键：字母、数字、功能键、方向键、小键盘等
         for (int vk = 0x08; vk <= 0xFE; ++vk) {
-            // 跳过鼠标键
             if (vk == VK_LBUTTON || vk == VK_RBUTTON || vk == VK_MBUTTON) continue;
             if (key_edge(vk)) {
                 g_cfg.bind[g_bindWaiting] = vk;
                 g_bindWaiting = -1;
-                config_save(); // 改绑后立即保存
+                config_save();
                 break;
             }
         }
-        return; // 等待绑定时不响应其他快捷键
+        return;
     }
 
-    // 菜单呼出/隐藏（关闭时保存配置）
     if (key_edge(g_cfg.bind[BIND_MENU])) {
         g_cfg.showMenu = !g_cfg.showMenu;
         ImGui::GetIO().MouseDrawCursor = g_cfg.showMenu;
         if (!g_cfg.showMenu) config_save();
     }
 
-    // 功能快捷键
     if (key_edge(g_cfg.bind[BIND_FLY]))        g_cfg.fly        = !g_cfg.fly;
     if (key_edge(g_cfg.bind[BIND_SPEED]))      g_cfg.speed      = !g_cfg.speed;
     if (key_edge(g_cfg.bind[BIND_FULLBRIGHT])) g_cfg.fullbright = !g_cfg.fullbright;
     if (key_edge(g_cfg.bind[BIND_ESP]))        g_cfg.esp        = !g_cfg.esp;
     if (key_edge(g_cfg.bind[BIND_NOFALL]))     g_cfg.noFall     = !g_cfg.noFall;
-    if (key_edge(g_cfg.bind[BIND_HUD]))    g_cfg.hud        = !g_cfg.hud;
-    if (key_edge(g_cfg.bind[BIND_KILLAURA])) g_cfg.killaura = !g_cfg.killaura;
-    if (key_edge(g_cfg.bind[BIND_TOTEM]))    g_cfg.autoTotem = !g_cfg.autoTotem;
+    if (key_edge(g_cfg.bind[BIND_HUD]))        g_cfg.hud        = !g_cfg.hud;
+    if (key_edge(g_cfg.bind[BIND_KILLAURA]))   g_cfg.killaura   = !g_cfg.killaura;
+    if (key_edge(g_cfg.bind[BIND_TOTEM]))      g_cfg.autoTotem  = !g_cfg.autoTotem;
 }
 
-// 供 menu.cpp 调用：设置/查询按键绑定等待状态
 void hooks_set_bind_waiting(int idx) { g_bindWaiting = idx; }
 int  hooks_get_bind_waiting()        { return g_bindWaiting; }
 
 void hooks_frame() {
-    // 1. 应用功能（写入游戏对象 / 回填坐标）—— 在游戏渲染线程上执行
     mc_apply_features();
 
-    // 2. 快捷键轮询
     poll_keybinds();
 
-    // 3. 绘制 UI
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
@@ -234,7 +209,6 @@ void hooks_frame() {
 void hooks_init(HMODULE) {
     if (MH_Initialize() != MH_OK) return;
 
-    // 等待 opengl32.dll 就绪（游戏启动后必定加载）
     HMODULE ogl = nullptr;
     for (int i = 0; i < 240 && !(ogl = GetModuleHandleW(L"opengl32.dll")); ++i)
         Sleep(250);

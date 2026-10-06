@@ -1,22 +1,14 @@
-// ============================================================
-// InStartInjector（CLI 后端）：供 InStart.exe 启动器调用
-//   InStartInjector.exe --list            列出检测到的游戏实例
-//   InStartInjector.exe --inject <pid>    向指定进程注入 InStart.dll
-//   InStartInjector.exe                   兼容旧用法：自动找第一个实例注入
-// 退出码：0=成功  1=业务失败（错误信息在输出中）  2=注入器自身崩溃
-// 全程 SEH 保护：崩溃时输出崩溃码并以 2 退出，不弹系统错误框。
-// ============================================================
+// CLI 后端：--list 列出实例，--inject <pid> 注入 InStart.dll。
+// 退出码 0 成功 / 1 失败 / 2 崩溃；崩溃经异常过滤器处理，不弹系统错误框。
 #include <windows.h>
 #include <cstdio>
 #include <cstring>
 
 #include "game_instances.h"
 
-// 注入流程（被 SEH 包裹）
 static int do_inject(DWORD pid) {
     printf("[+] 目标进程 PID=%lu\n", pid);
 
-    // 1. 定位同目录下的 InStart.dll
     wchar_t selfDir[MAX_PATH];
     GetModuleFileNameW(nullptr, selfDir, MAX_PATH);
     wchar_t* slash = wcsrchr(selfDir, L'\\');
@@ -30,7 +22,6 @@ static int do_inject(DWORD pid) {
     }
     printf("[+] DLL 路径就绪\n");
 
-    // 2. 打开游戏进程
     HANDLE hProc = OpenProcess(
         PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION |
         PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ,
@@ -42,7 +33,6 @@ static int do_inject(DWORD pid) {
     }
     printf("[+] OpenProcess 成功\n");
 
-    // 3. 写入 DLL 路径 -> 远程线程调用 LoadLibraryW
     SIZE_T bytes = (wcslen(dllPath) + 1) * sizeof(wchar_t);
     LPVOID remote = VirtualAllocEx(hProc, nullptr, bytes,
                                    MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
@@ -93,7 +83,6 @@ static int do_list() {
     return 0;
 }
 
-// 崩溃码 -> 可读描述
 static const char* seh_name(unsigned code) {
     switch (code) {
     case 0xC0000005: return "访问冲突（读写了无效内存）";
@@ -127,21 +116,20 @@ static int seh_body(int argc, char** argv) {
     return 1;
 }
 
-// 顶层未处理异常过滤器：注入器崩溃时输出崩溃码并以 2 退出（MinGW 无 __try/__except）
+// MinGW 没有 __try/__except，用顶层过滤器 + VEH 兜底崩溃
 static LONG WINAPI crash_filter(EXCEPTION_POINTERS* ep) {
     unsigned code = ep->ExceptionRecord->ExceptionCode;
     const char* name = seh_name(code);
-    // 同时写 stdout/stderr：VEH 场景下 stderr 无缓冲更可靠
+    // VEH 场景下 stderr 无缓冲更可靠，stdout 也写一份
     fprintf(stdout, "[CRASH] 注入器崩溃：code=0x%08lX%s%s\n",
             code, name ? " " : "", name ? name : "");
     fflush(stdout); fflush(stderr);
     ExitProcess(2);
-    return EXCEPTION_EXECUTE_HANDLER; // 不会到达
+    return EXCEPTION_EXECUTE_HANDLER;
 }
 
 int main(int argc, char** argv) {
     SetConsoleOutputCP(CP_UTF8);
-    // 屏蔽系统崩溃弹窗，交给异常过滤器处理
     SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
     SetUnhandledExceptionFilter(crash_filter);
     AddVectoredExceptionHandler(1, crash_filter);

@@ -1,9 +1,5 @@
-# ============================================================
-# InStart 多版本映射生成器
-# 为 1.21 ~ 1.21.11 各版本下载 yarn 映射，提取所需中介(intermediary) ID，
-# 生成「版本 -> ID 表」结构的 src/jni/mappings.h（mc.cpp 运行时按版本查表）
-# 用法: python gen_mappings.py
-# ============================================================
+# 下载 1.21 ~ 1.21.11 的 yarn 映射，提取所需 intermediary ID，
+# 生成 src/jni/mappings.h。用法: python gen_mappings.py
 import io
 import json
 import os
@@ -19,7 +15,7 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 CACHE = os.path.join(BASE, "mappings")
 OUT = os.path.join(BASE, "src", "jni", "mappings.h")
 
-# ---- 需要的类: yarn(named) 全名 ----
+# yarn named 全名
 WANT_CLASSES = {
     "net/minecraft/client/MinecraftClient",
     "net/minecraft/client/network/ClientPlayerEntity",
@@ -51,8 +47,8 @@ WANT_CLASSES = {
     "net/minecraft/util/math/Vec3d",
 }
 
-# ---- 需要的成员: (yarn类全名, f/m, yarn成员名, 描述符过滤或None) ----
-# desc 为 official 命名空间的描述符；基本类型与 java/* 类型跨版本稳定，可作过滤条件
+# (yarn类全名, f/m, yarn成员名, 描述符过滤)。
+# desc 取 official 命名空间，基本类型与 java/* 跨版本稳定，可作过滤条件。
 WANT_MEMBERS = [
     ("net/minecraft/client/MinecraftClient", "f", "player", None),
     ("net/minecraft/client/MinecraftClient", "f", "options", None),
@@ -87,29 +83,25 @@ WANT_MEMBERS = [
     ("net/minecraft/item/ItemStack", "m", "getItem", None),
     ("net/minecraft/item/Items", "f", "TOTEM_OF_UNDYING", None),
     ("net/minecraft/screen/slot/SlotActionType", "f", "SWAP", None),
-    # 内置服务端玩家链路（单机伤害由服务端判定）
     ("net/minecraft/client/MinecraftClient", "m", "getServer", None),
     ("net/minecraft/server/MinecraftServer", "m", "getPlayerManager", None),
     ("net/minecraft/server/PlayerManager", "m", "getPlayerList", "()Ljava/util/List;"),
-    # 移动速度属性（加速直接写属性，绕过 abilities 同步的不确定性）
     ("net/minecraft/entity/LivingEntity", "m", "getAttributes", None),
     ("net/minecraft/entity/attribute/AttributeContainer", "m", "get", None),
     ("net/minecraft/entity/attribute/AttributeContainer", "m", "getCustomInstance", None),
     ("net/minecraft/entity/attribute/EntityAttributeInstance", "m", "setBaseValue", "(D)V"),
     ("net/minecraft/entity/attribute/EntityAttributes", "f", "MOVEMENT_SPEED", None),
     ("net/minecraft/entity/attribute/EntityAttributes", "f", "GENERIC_MOVEMENT_SPEED", None),
-    # FakeGround：onGround 伪装
     ("net/minecraft/entity/Entity", "f", "onGround", "Z"),
     ("net/minecraft/entity/Entity", "m", "isSprinting", "()Z"),
-    # NoFall(Packet 模式，参考 Meteor)：sendPacket 断点 + 移动包 onGround
-    # 不用描述符过滤：参数 Packet 的官方短名每版本变化
+    # NoFall packet 模式；sendPacket 参数的官方短名每版本不同，不做描述符过滤
     ("net/minecraft/client/network/ClientCommonNetworkHandler", "m", "sendPacket", None),
     ("net/minecraft/network/packet/c2s/play/PlayerMoveC2SPacket", "f", "onGround", "Z"),
     ("net/minecraft/entity/Entity", "m", "getVelocity", None),
     ("net/minecraft/util/math/Vec3d", "f", "y", "D"),
 ]
-# isFallFlying/isGliding（yarn 名 1.21.2 起变更，intermediary 均为 method_6128）
-# 声明位置跨版本在 Entity/LivingEntity 间漂移，build_record 中手工兜底解析
+# isFallFlying/isGliding 的 yarn 名 1.21.2 起变更（intermediary 同为 method_6128），
+# 声明位置也在 Entity/LivingEntity 间漂移，build_record 里手工兜底。
 
 
 def fetch(url, binary=False):

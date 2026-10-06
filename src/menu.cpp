@@ -1,14 +1,10 @@
-// ============================================================
-// InStart 菜单：坐标 HUD + 已启用功能列表（右上角，彩虹字）
-//              + 注入提示 + 版本不兼容提示 + ImGui 主界面（含按键绑定）
-// ============================================================
+// 游戏内菜单：坐标 HUD、右上角功能列表、注入横幅、ImGui 主界面
 #include <cstdio>
 #include <cmath>
 #include <imgui.h>
 #include "config.h"
 #include "hooks.h"
 
-// 时间流动的彩虹色（类似主流客户端的 Rainbow ArrayList）
 static ImU32 rainbow_color(int idx, float speed = 1.2f, float sat = 0.85f, float val = 1.0f) {
     float hue = fmodf((float)ImGui::GetTime() * speed * 0.15f + idx * 0.12f, 1.0f);
     if (hue < 0) hue += 1.f;
@@ -17,7 +13,7 @@ static ImU32 rainbow_color(int idx, float speed = 1.2f, float sat = 0.85f, float
     return IM_COL32((int)(r * 255), (int)(g * 255), (int)(b * 255), 255);
 }
 
-// 画一条带半透明背景的文字，返回占用高度
+// 带半透明背景的文字，返回占用高度
 static float draw_chip(ImDrawList* dl, ImFont* font, float x, float y, const char* text, ImU32 color) {
     ImVec2 ts = font->CalcTextSizeA(17.0f, FLT_MAX, 0, text);
     const float padX = 7.0f, padY = 3.0f;
@@ -30,7 +26,7 @@ static float draw_chip(ImDrawList* dl, ImFont* font, float x, float y, const cha
     return ts.y + padY * 2 + 3.0f;
 }
 
-// 在屏幕顶部居中画提示横幅（带背景）
+// 屏幕顶部居中的提示横幅
 static void draw_banner(ImDrawList* dl, ImFont* font, const char* text, ImU32 color) {
     ImGuiIO& io = ImGui::GetIO();
     ImVec2 ts = font->CalcTextSizeA(20.0f, FLT_MAX, 0, text);
@@ -50,7 +46,7 @@ void menu_draw() {
     ImFont* font = ImGui::GetFont();
     ImGuiIO& io = ImGui::GetIO();
 
-    // ---- 注入完成提示（绿色横幅，几秒后淡出）----
+    // 注入完成横幅，显示 4 秒
     if (!g_state.injectShown && g_state.jniReady) {
         g_state.injectShown = true;
     }
@@ -59,13 +55,13 @@ void menu_draw() {
         injectShowTime = (float)ImGui::GetTime();
     if (injectShowTime > 0.f) {
         float age = (float)ImGui::GetTime() - injectShowTime;
-        if (age < 4.0f) { // 显示 4 秒
+        if (age < 4.0f) {
             int alpha = age > 3.0f ? (int)((4.0f - age) * 255) : 255;
             draw_banner(dl, font, "InStart 注入完成", IM_COL32(80, 255, 120, alpha));
         }
     }
 
-    // ---- 左上角：坐标 HUD（带背景）----
+    // 左上角坐标 HUD
     if (g_cfg.hud) {
         char buf[160];
         if (g_state.inGame)
@@ -76,7 +72,7 @@ void menu_draw() {
         draw_chip(dl, font, 16, 12, buf, rainbow_color(0));
     }
 
-    // ---- 右上角：已启用功能列表（彩虹 ArrayList）----
+    // 右上角功能列表
     {
         struct { bool on; const char* name; } feats[] = {
             { g_cfg.fly,        "飞行" },
@@ -100,7 +96,6 @@ void menu_draw() {
 
     if (!g_cfg.showMenu) return;
 
-    // ---- 主菜单 ----
     ImGui::SetNextWindowSize(ImVec2(560, 420), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowPos(ImVec2(90, 90), ImGuiCond_FirstUseEver);
 
@@ -182,7 +177,7 @@ void menu_draw() {
                 if (waiting == a) {
                     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.30f, 0.60f, 0.80f, 1.0f));
                     if (ImGui::Button("请按键...", ImVec2(120, 0))) {
-                        hooks_set_bind_waiting(-1); // 再点一次取消
+                        hooks_set_bind_waiting(-1);
                     }
                     ImGui::PopStyleColor();
                 } else {

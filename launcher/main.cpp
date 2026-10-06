@@ -1,9 +1,5 @@
-// ============================================================
-// InStart 启动器：现代 UI（ImGui + Win32 + DX11）
-// - 启动后扫描并列出检测到的 Minecraft 实例，用户选择后再注入
-// - 注入通过子进程调用 InStartInjector.exe --inject <pid>
-// - 注入器崩溃/失败时显示原因，界面不退出
-// ============================================================
+// 启动器：列出检测到的游戏实例，用户选择后通过子进程调用注入器，
+// 注入失败或崩溃时显示原因。
 #include <windows.h>
 #include <d3d11.h>
 #include <cstdio>
@@ -22,14 +18,12 @@
 #pragma comment(lib, "d3d11")
 #pragma comment(lib, "dxgi")
 
-// ---- D3D11 全局 ----
 static ID3D11Device*           g_dev = nullptr;
 static ID3D11DeviceContext*    g_ctx = nullptr;
 static IDXGISwapChain*         g_swap = nullptr;
 static ID3D11RenderTargetView* g_rtv = nullptr;
 static UINT g_resizeW = 0, g_resizeH = 0;
 
-// ---- 应用状态 ----
 static std::vector<GameInstance> g_instances;
 static int      g_selected = -1;
 static float    g_scanCooldown = 0.f;
@@ -43,7 +37,6 @@ static int               g_lastExit = -1;  // -1 无结果 0 成功 1 失败 2 �
 static bool              g_resultNew = false;
 static int               g_injectedPid = 0;
 
-// 重新扫描游戏实例
 static void rescan() {
     g_instances.clear();
     g_selected = -1;
@@ -54,16 +47,12 @@ static void rescan() {
     g_resultNew = false;
 }
 
-// 主题色
 static const ImVec4 ACCENT   = ImVec4(0.45f, 0.40f, 0.95f, 1.0f);
 static const ImVec4 ACCENT_H = ImVec4(0.55f, 0.50f, 1.00f, 1.0f);
 static const ImVec4 OK_GREEN = ImVec4(0.30f, 0.85f, 0.45f, 1.0f);
 static const ImVec4 ERR_RED  = ImVec4(0.95f, 0.35f, 0.35f, 1.0f);
 static const ImVec4 BG_DARK  = ImVec4(0.075f, 0.08f, 0.10f, 1.0f);
 
-// ============================================================
-// D3D11 设备
-// ============================================================
 static bool create_device(HWND hwnd) {
     DXGI_SWAP_CHAIN_DESC sd = {};
     sd.BufferCount = 2;
@@ -103,9 +92,6 @@ static void reset_rtv() {
     back->Release();
 }
 
-// ============================================================
-// 注入子进程：重定向输出 + 等待退出 + 记录退出码
-// ============================================================
 static void inject_worker(DWORD pid) {
     g_log.clear();
     g_lastExit = -1;
@@ -152,7 +138,6 @@ static void inject_worker(DWORD pid) {
         return;
     }
 
-    // 读输出直到管道关闭
     char chunk[512];
     DWORD got = 0;
     while (ReadFile(rPipe, chunk, sizeof chunk - 1, &got, nullptr) && got > 0) {
@@ -181,9 +166,6 @@ static void start_inject(DWORD pid) {
     std::thread(inject_worker, pid).detach();
 }
 
-// ============================================================
-// 现代主题
-// ============================================================
 static void apply_style() {
     ImGuiStyle& s = ImGui::GetStyle();
     s.WindowRounding = 0.f;
@@ -217,9 +199,6 @@ static void apply_style() {
     c[ImGuiCol_Separator]       = ImVec4(0.22f, 0.23f, 0.28f, 1.0f);
 }
 
-// ============================================================
-// 主界面
-// ============================================================
 static void draw_ui() {
     ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(vp->Pos);
@@ -229,7 +208,6 @@ static void draw_ui() {
         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
         ImGuiWindowFlags_NoBringToFrontOnFocus);
 
-    // ---- 头部 ----
     ImGui::PushFont(ImGui::GetIO().Fonts->Fonts.Size > 1
                     ? ImGui::GetIO().Fonts->Fonts[1] : nullptr);
     ImGui::TextColored(ACCENT_H, "InStart");
@@ -240,16 +218,13 @@ static void draw_ui() {
     ImGui::Separator();
     ImGui::Spacing();
 
-    // ---- 实例列表区 ----
     float footerH = 120.f;
     ImGui::BeginChild("##list", ImVec2(0, -footerH), true);
 
-    // 标题关键词管理（可折叠）
     if (ImGui::CollapsingHeader("标题匹配关键词")) {
         ImGui::Indent(8);
         ImGui::TextDisabled("窗口标题包含以下任一关键词即视为游戏实例");
 
-        // 关键词标签流式排列；内置词不可删，自定义词可删
         int delIdx = -1;
         for (int i = 0; i < g_kw.count; ++i) {
             char u8[80];
@@ -269,7 +244,6 @@ static void draw_ui() {
         }
         ImGui::NewLine();
 
-        // 添加新关键词
         ImGui::SetNextItemWidth(260);
         bool add = ImGui::InputTextWithHint("##kw", "输入自定义标题关键词，回车添加",
                                             g_kwInput, sizeof g_kwInput,
@@ -285,7 +259,7 @@ static void draw_ui() {
                 rescan();
             }
         }
-        if (delIdx >= 0) { // 删除自定义关键词
+        if (delIdx >= 0) {
             for (int i = delIdx; i < g_kw.count - 1; ++i)
                 wcscpy(g_kw.items[i], g_kw.items[i + 1]);
             g_kw.count--;
@@ -327,7 +301,6 @@ static void draw_ui() {
             ImGui::PopStyleVar();
             if (sel) ImGui::PopStyleColor(2);
 
-            // 在 Selectable 上绘制两行文字
             ImVec2 p = ImGui::GetItemRectMin();
             ImDrawList* dl = ImGui::GetWindowDrawList();
             ImFont* f = ImGui::GetFont();
@@ -335,7 +308,6 @@ static void draw_ui() {
                         ImGui::GetColorU32(ImGuiCol_Text), label);
             dl->AddText(f, 14.f, ImVec2(p.x + 14, p.y + 30),
                         ImGui::GetColorU32(ImGuiCol_TextDisabled), sub);
-            // 选中指示条
             if (sel)
                 dl->AddRectFilled(p, ImVec2(p.x + 4, p.y + 52),
                                   ImGui::GetColorU32(ACCENT), 2.f);
@@ -344,10 +316,8 @@ static void draw_ui() {
     }
     ImGui::EndChild();
 
-    // ---- 底部操作区 ----
     ImGui::Spacing();
 
-    // 结果横幅
     if (g_resultNew) {
         if (g_lastExit == 0)
             ImGui::TextColored(OK_GREEN, "注入完成！切回游戏按右 Alt 呼出菜单");
@@ -361,7 +331,6 @@ static void draw_ui() {
         ImGui::TextDisabled("选择一个游戏实例后点击注入");
     }
 
-    // 日志输出（有内容时显示）
     if (!g_log.empty() && g_resultNew && g_lastExit != 0) {
         ImGui::BeginChild("##log", ImVec2(0, 52), true,
                           ImGuiWindowFlags_HorizontalScrollbar);
@@ -371,7 +340,6 @@ static void draw_ui() {
         ImGui::EndChild();
     }
 
-    // 按钮行
     float btnH = 40.f;
     float injectW = 160.f, refreshW = 100.f;
     ImGui::SetCursorPosX(ImGui::GetWindowWidth() - ImGui::GetStyle().WindowPadding.x
@@ -397,9 +365,6 @@ static void draw_ui() {
     ImGui::End();
 }
 
-// ============================================================
-// Win32 骨架
-// ============================================================
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND, UINT, WPARAM, LPARAM);
 
 static LRESULT WINAPI wnd_proc(HWND h, UINT msg, WPARAM w, LPARAM l) {
@@ -438,13 +403,12 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE, LPSTR, int) {
     ImGui_ImplWin32_Init(hwnd);
     ImGui_ImplDX11_Init(g_dev, g_ctx);
 
-    // 中文字体：微软雅黑（ttc 取第一个字体），失败退回内置字体
+    // 中文字体（msyh.ttc 取第一个），失败用内置字体
     ImFontConfig fc;
     fc.FontNo = 0;
     ImFont* cn = io.Fonts->AddFontFromFileTTF(
         "C:\\Windows\\Fonts\\msyh.ttc", 18.f, &fc,
         io.Fonts->GetGlyphRangesChineseSimplifiedCommon());
-    // 标题用大一号
     ImFontConfig fc2;
     fc2.FontNo = 0;
     ImFont* title = io.Fonts->AddFontFromFileTTF(
@@ -453,7 +417,6 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE, LPSTR, int) {
     if (!cn) io.Fonts->AddFontDefault();
     (void)title;
 
-    // 初始加载关键词 + 扫描
     load_title_keywords(&g_kw);
     rescan();
 

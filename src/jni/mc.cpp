@@ -1,8 +1,4 @@
-// ============================================================
-// InStart JNI 层：附着 JVM -> 检测版本 -> 按版本映射表定位类 ->
-// 每帧把功能开关写入游戏对象（飞行/加速/全亮/无摔落/坐标/ESP）
-// 支持版本：1.21 ~ 1.21.11（不兼容版本会停用全部功能）
-// ============================================================
+// JNI 层：附着进程内 JVM，按版本映射解析游戏类，每帧把功能开关写进游戏对象。
 #include <jni.h>
 #include <windows.h>
 #include <cstring>
@@ -14,9 +10,8 @@
 
 static JavaVM*  g_vm  = nullptr;
 static JNIEnv*  g_env = nullptr;
-static const McVerMap* g_map = nullptr; // 当前版本的映射表
+static const McVerMap* g_map = nullptr;
 
-// ---- 缓存的类 ----
 static jclass c_MinecraftClient, c_GameOptions, c_SimpleOption,
               c_PlayerAbilities, c_PlayerEntity, c_Double,
               c_ClientWorld, c_LivingEntity,
@@ -25,63 +20,53 @@ static jclass c_MinecraftClient, c_GameOptions, c_SimpleOption,
               c_MinecraftServer, c_PlayerManager, c_AttributeContainer,
               c_AttributeInstance, c_EntityAttributes, c_MobEntity;
 
-// ---- 缓存的方法 ----
-static jmethodID m_getInstance;          // MinecraftClient.getInstance()
-static jmethodID m_sendAbilitiesUpdate;  // PlayerEntity.sendAbilitiesUpdate()
-static jmethodID m_getX, m_getY, m_getZ; // Entity.getX/getY/getZ
-static jmethodID m_setValue;             // SimpleOption.setValue(Object)
-static jmethodID m_dblValueOf;           // Double.valueOf(double)
-static jmethodID m_getEntities;          // ClientWorld.getEntities()
-static jmethodID m_setGlowing;           // Entity.setGlowing(boolean)
-static jmethodID m_it_iterator, m_it_hasNext, m_it_next; // Iterable/Iterator
-static jmethodID m_attackEntity;         // InteractionManager.attackEntity
-static jmethodID m_clickSlot;            // InteractionManager.clickSlot
-static jmethodID m_getInventory;         // PlayerEntity.getInventory()
-static jmethodID m_getOffHandStack;      // LivingEntity.getOffHandStack()
-static jmethodID m_deadOrDying;          // LivingEntity.isDeadOrDying()（1.21 为 isDead）
-static jmethodID m_stackIsEmpty;         // ItemStack.isEmpty()
-static jmethodID m_stackGetItem;         // ItemStack.getItem()
-static jmethodID m_list_size, m_list_get; // java.util.List.size/get
-// 内置服务端 / 属性
-static jmethodID m_getServer;            // MinecraftClient.getServer()
-static jmethodID m_getPlayerManager;     // MinecraftServer.getPlayerManager()
-static jmethodID m_getPlayerList;        // PlayerManager.getPlayerList()
-static jmethodID m_getAttributes;        // LivingEntity.getAttributes()
-static jmethodID m_attrGet;              // AttributeContainer.get/getCustomInstance
-static jmethodID m_setBaseValue;         // AttributeInstance.setBaseValue(double)
-static jmethodID m_isSprinting;          // Entity.isSprinting()
+static jmethodID m_getInstance;
+static jmethodID m_sendAbilitiesUpdate;
+static jmethodID m_getX, m_getY, m_getZ;
+static jmethodID m_setValue;
+static jmethodID m_dblValueOf;
+static jmethodID m_getEntities;
+static jmethodID m_setGlowing;
+static jmethodID m_it_iterator, m_it_hasNext, m_it_next;
+static jmethodID m_attackEntity;
+static jmethodID m_clickSlot;
+static jmethodID m_getInventory;
+static jmethodID m_getOffHandStack;
+static jmethodID m_deadOrDying;
+static jmethodID m_stackIsEmpty;
+static jmethodID m_stackGetItem;
+static jmethodID m_list_size, m_list_get;
+static jmethodID m_getServer;
+static jmethodID m_getPlayerManager;
+static jmethodID m_getPlayerList;
+static jmethodID m_getAttributes;
+static jmethodID m_attrGet;
+static jmethodID m_setBaseValue;
+static jmethodID m_isSprinting;
 
-// ---- 缓存的字段 ----
-static jfieldID f_mc_player;             // MinecraftClient.player
-static jfieldID f_mc_world;              // MinecraftClient.world
-static jfieldID f_mc_options;            // MinecraftClient.options
-static jfieldID f_mc_interactionManager; // MinecraftClient.interactionManager
-static jfieldID f_mc_currentScreen;      // MinecraftClient.currentScreen（null = 未打开 GUI）
-static jfieldID f_player_abilities;      // PlayerEntity.abilities
+static jfieldID f_mc_player;
+static jfieldID f_mc_world;
+static jfieldID f_mc_options;
+static jfieldID f_mc_interactionManager;
+static jfieldID f_mc_currentScreen;
+static jfieldID f_player_abilities;
 static jfieldID f_ab_allowFlying, f_ab_flying, f_ab_flySpeed, f_ab_walkSpeed;
-static jfieldID f_ent_fallDistance;      // Entity.fallDistance（签名随版本 F/D）
-static jfieldID f_go_gamma;              // GameOptions.gamma (SimpleOption)
-static jfieldID f_inv_main;              // PlayerInventory.main (List<ItemStack>)
-static jfieldID f_player_screenHandler;  // PlayerEntity.playerScreenHandler（syncId 恒为 0，用于判背包界面打开）
-static jfieldID f_onGround;              // Entity.onGround（FakeGround 用）
+static jfieldID f_go_gamma;
+static jfieldID f_inv_main;
 
-// ---- 静态对象（图腾物品 / SWAP 枚举 / 移动速度属性）----
 static jobject g_totemItem = nullptr;
 static jobject g_swapAction = nullptr;
-static jobject g_moveSpeedAttr = nullptr; // EntityAttributes.MOVEMENT_SPEED（RegistryEntry）
+static jobject g_moveSpeedAttr = nullptr;
 
-// ---- 边沿触发的上次状态 ----
-static bool  prevFly = false, prevSpeed = false, prevFb = false, prevEsp = false;
+static bool  prevFly = false, prevSpeed = false, prevFb = false;
 static float prevFlySp = -1.f, prevSpMult = -1.f;
-static int   espTick = 0;
 
-// 类查找：官方启动器（系统类加载器）用 FindClass 即可；
-// Fabric/Knot 环境下退化为用当前线程上下文类加载器 Class.forName
 static jclass find_class(JNIEnv* env, const char* name) {
     jclass c = env->FindClass(name);
     if (c) return c;
     if (env->ExceptionCheck()) env->ExceptionClear();
 
+    // Knot 环境下 FindClass 失败，用当前线程的上下文类加载器
     jclass threadCls = env->FindClass("java/lang/Thread");
     if (!threadCls) { if (env->ExceptionCheck()) env->ExceptionClear(); return nullptr; }
     jmethodID cur = env->GetStaticMethodID(threadCls, "currentThread", "()Ljava/lang/Thread;");
@@ -101,7 +86,6 @@ static jclass find_class(JNIEnv* env, const char* name) {
     return (jclass)clsObj;
 }
 
-// 从变体列表中逐个尝试查找类
 static jclass find_class_any(JNIEnv* env, const char* const* variants) {
     for (int i = 0; variants[i]; ++i) {
         jclass c = find_class(env, variants[i]);
@@ -110,7 +94,6 @@ static jclass find_class_any(JNIEnv* env, const char* const* variants) {
     return nullptr;
 }
 
-// 从变体列表中逐个尝试获取静态方法 ID
 static jmethodID get_static_mid_any(JNIEnv* env, jclass cls,
                                     const char* const* names, const char* sig) {
     for (int i = 0; names[i]; ++i) {
@@ -121,7 +104,6 @@ static jmethodID get_static_mid_any(JNIEnv* env, jclass cls,
     return nullptr;
 }
 
-// 从变体列表中逐个尝试获取实例方法 ID
 static jmethodID get_mid_any(JNIEnv* env, jclass cls,
                              const char* const* names, const char* sig) {
     for (int i = 0; names[i]; ++i) {
@@ -132,7 +114,6 @@ static jmethodID get_mid_any(JNIEnv* env, jclass cls,
     return nullptr;
 }
 
-// 调用 getGameVersion 获取版本字符串
 static bool detect_version(JNIEnv* env, jclass mcCls, jobject mc, char out[64]) {
     jmethodID mVer = get_mid_any(env, mcCls, g_bootMGetGameVersion,
                                  "()Ljava/lang/String;");
@@ -147,8 +128,6 @@ static bool detect_version(JNIEnv* env, jclass mcCls, jobject mc, char out[64]) 
     return true;
 }
 
-// 按版本号查映射表；找到返回 true 并设置 g_map。
-// 无精确匹配时回退到映射表中不高于该版本的最新一条（JNI 解析失败会自动停用，不会崩溃）
 static bool pick_mappings(const char* version) {
     for (int i = 0; i < g_mcVerMapsCount; ++i) {
         if (strcmp(g_mcVerMaps[i].version, version) == 0) {
@@ -156,37 +135,32 @@ static bool pick_mappings(const char* version) {
             return true;
         }
     }
-    if (g_mcVerMapsCount > 0) { // 回退：最新映射
+    if (g_mcVerMapsCount > 0) {
         g_map = &g_mcVerMaps[g_mcVerMapsCount - 1];
         return true;
     }
     return false;
 }
 
-// 从版本串提取基础版本号（前缀 \d+(\.\d+)* 部分）。
-// Fabric Loader 会把 getGameVersion() 改写成 "1.21.11-Fabric_0.19.2" 之类的
-// 加载器后缀形式，须剥离后再查表；后缀只允许 Fabric 标识 + 加载器版本号，
-// 避免把 "1.21.11-pre1-Fabric_x" 这类预发布误判成正式版。
+// Fabric Loader 会把版本串改成 "1.21.11-Fabric_0.19.2"，取前缀的正式版本号。
 static bool extract_base_version(const char* ver, char* out, size_t outsz) {
-    if (!ver || ver[0] < '0' || ver[0] > '9') return false; // 快照 24w14a 不以纯版本开头
+    if (!ver || ver[0] < '0' || ver[0] > '9') return false;
     size_t n = 0;
     while (ver[n] && ((ver[n] >= '0' && ver[n] <= '9') || ver[n] == '.')) ++n;
-    while (n > 0 && ver[n - 1] == '.') --n; // 防御性：去掉末尾孤立 '.'
+    while (n > 0 && ver[n - 1] == '.') --n;
     if (n == 0 || n >= outsz) return false;
 
     const char* rest = ver + n;
-    if (*rest) { // 有后缀：必须整体是 "-Fabric_0.19.2" 形式
+    if (*rest) {
         while (*rest == '-' || *rest == '_' || *rest == ' ') ++rest;
-        // 大小写不敏感匹配 "fabric"
         char buf[8] = {};
         for (int i = 0; i < 6; ++i) {
             char c = rest[i];
             if (!c) return false;
             buf[i] = (c >= 'A' && c <= 'Z') ? char(c + 32) : c;
         }
-        if (strcmp(buf, "fabric") != 0) return false; // pre/rc 等一律拒绝
+        if (strcmp(buf, "fabric") != 0) return false;
         rest += 6;
-        // 剩余只能由分隔符/数字/'.'组成（加载器版本号）
         for (const char* p = rest; *p; ++p) {
             char c = *p;
             if (!(c == '-' || c == '_' || c == ' ' ||
@@ -216,11 +190,8 @@ static bool extract_base_version(const char* ver, char* out, size_t outsz) {
 
 bool mc_jni_init() {
     if (g_env) return true;
-    // 失败路径统一出口：JNI 查询失败会留下 pending 异常，若不清理，
-    // 异常会在回到 Java 边界时抛出（NoSuchMethodError 等）并导致游戏崩溃
     #define INIT_FAIL() do { if (env->ExceptionCheck()) env->ExceptionClear(); return false; } while (0)
 
-    // 1. 取进程内已存在的 JVM（jvm.dll 已随 javaw.exe 加载）
     if (!g_vm) {
         using GetCreatedVMs_t = jint (*)(JavaVM**, jsize, jsize*);
         auto fn = (GetCreatedVMs_t)GetProcAddress(GetModuleHandleA("jvm.dll"), "JNI_GetCreatedJavaVMs");
@@ -231,13 +202,11 @@ bool mc_jni_init() {
         g_vm = vms[0];
     }
 
-    // 2. 获取 JNIEnv（渲染线程本身是 Java 线程，一般已附着）
     JNIEnv* env = nullptr;
     if (g_vm->GetEnv((void**)&env, JNI_VERSION_1_8) == JNI_EDETACHED)
         g_vm->AttachCurrentThread((void**)&env, nullptr);
     if (!env) return false;
 
-    // 3. 引导：找 MinecraftClient 类 -> getInstance -> getGameVersion
     jclass bootMcCls = find_class_any(env, g_bootClsMc);
     if (!bootMcCls) return false;
     jmethodID bootGetInst = get_static_mid_any(env, bootMcCls, g_bootMGetInstance,
@@ -254,13 +223,10 @@ bool mc_jni_init() {
     strncpy(g_state.version, ver, sizeof g_state.version - 1);
     env->DeleteLocalRef(bootMc);
 
-    // 4. 剥离 Fabric 加载器后缀后按版本选映射；无法剥离时直接用原串查表，
-    //    无精确匹配则回退最新映射（解析失败会自动停用功能，不做版本阻断）
     char base[64] = {};
     const char* key = extract_base_version(ver, base, sizeof base) ? base : ver;
     if (!pick_mappings(key)) return false;
 
-    // 5. 用当前版本映射表解析全部类/方法/字段
     const McVerMap& M = *g_map;
     RESOLVE_CLASS(c_MinecraftClient, M.clsMinecraftClient);
     RESOLVE_CLASS(c_GameOptions,     M.clsGameOptions);
@@ -284,7 +250,6 @@ bool mc_jni_init() {
     if (!dbl) return false;
     c_Double = (jclass)env->NewGlobalRef(dbl);
 
-    // 方法
     m_getInstance = env->GetStaticMethodID(c_MinecraftClient, M.mGetInstance,
                                            "()Lnet/minecraft/class_310;");
     if (!m_getInstance) INIT_FAIL();
@@ -313,7 +278,6 @@ bool mc_jni_init() {
         m_list_get  = env->GetMethodID(list, "get", "(I)Ljava/lang/Object;");
         if (!m_list_size || !m_list_get) INIT_FAIL();
     }
-    // 杀戮光环/自动图腾相关（签名中的类名按版本动态拼接）
     {
         char msig[160];
         snprintf(msig, sizeof msig, "(L%s;L%s;)V", M.clsPlayerEntity, M.clsEntity);
@@ -330,7 +294,6 @@ bool mc_jni_init() {
         RESOLVE_METHOD(m_stackGetItem, c_ItemStack, M.mStackGetItem, msig);
     }
 
-    // 内置服务端链路 / 属性（签名按版本动态拼接）
     {
         char msig[192];
         snprintf(msig, sizeof msig, "()L%s;", M.clsMinecraftServer);
@@ -347,7 +310,6 @@ bool mc_jni_init() {
         RESOLVE_METHOD(m_isSprinting, c_PlayerEntity, M.mIsSprinting, "()Z");
     }
 
-    // 字段
     char sig[64];
     snprintf(sig, sizeof sig, "L%s;", M.clsClientPlayerEntity);
     RESOLVE_FIELD(f_mc_player, c_MinecraftClient, M.fMcPlayer, sig);
@@ -357,7 +319,6 @@ bool mc_jni_init() {
     RESOLVE_FIELD(f_mc_options, c_MinecraftClient, M.fMcOptions, sig);
     snprintf(sig, sizeof sig, "L%s;", M.clsInteractionManager);
     RESOLVE_FIELD(f_mc_interactionManager, c_MinecraftClient, M.fMcInteractionManager, sig);
-    // currentScreen 为 Screen 类型（可能为 null），描述符用当前版本 Screen 类
     {
         jclass scrCls = find_class(env, M.clsScreen);
         if (!scrCls) return false;
@@ -370,22 +331,12 @@ bool mc_jni_init() {
     RESOLVE_FIELD(f_ab_flying,      c_PlayerAbilities, M.fFlying, "Z");
     RESOLVE_FIELD(f_ab_flySpeed,    c_PlayerAbilities, M.fFlySpeed, "F");
     RESOLVE_FIELD(f_ab_walkSpeed,   c_PlayerAbilities, M.fWalkSpeed, "F");
-    // fallDistance：1.21.8 及以前是 float(F)，1.21.9+ 是 double(D)
-    RESOLVE_FIELD(f_ent_fallDistance, c_PlayerEntity, M.fFallDistance,
-                  M.fallDistType == 'D' ? "D" : "F");
-    RESOLVE_FIELD(f_onGround, c_PlayerEntity, M.fOnGround, "Z");
     snprintf(sig, sizeof sig, "L%s;", M.clsSimpleOption);
     RESOLVE_FIELD(f_go_gamma, c_GameOptions, M.fGamma, sig);
 
-    // PlayerInventory.main（声明类型为 DefaultedList，按版本动态）
     snprintf(sig, sizeof sig, "L%s;", M.clsDefaultedList);
     RESOLVE_FIELD(f_inv_main, c_PlayerInventory, M.fInvMain, sig);
 
-    // PlayerEntity.playerScreenHandler（背包界面，syncId=0）
-    snprintf(sig, sizeof sig, "L%s;", M.clsPlayerScreenHandler);
-    RESOLVE_FIELD(f_player_screenHandler, c_PlayerEntity, M.fPlayerScreenHandler, sig);
-
-    // 静态字段：Items.TOTEM_OF_UNDYING / SlotActionType.SWAP
     {
         snprintf(sig, sizeof sig, "L%s;", M.clsItem);
         jfieldID sf = env->GetStaticFieldID(c_Items, M.fItemsTotem, sig);
@@ -402,7 +353,6 @@ bool mc_jni_init() {
         g_swapAction = env->NewGlobalRef(swap);
     }
 
-    // EntityAttributes.MOVEMENT_SPEED（旧名 GENERIC_MOVEMENT_SPEED），类型为 RegistryEntry
     {
         char msig[128];
         snprintf(msig, sizeof msig, "L%s;", M.clsRegistryEntry);
@@ -416,12 +366,10 @@ bool mc_jni_init() {
     g_env = env;
     g_state.jniReady = true;
 
-    // 无摔落（JVMTI Packet 模式）：失败仅停用该功能
     nofall_init(g_vm, *g_map, env);
     return true;
 }
 
-// 取内置服务端玩家对象（单机世界只有一个）；返回局部引用，调用方负责释放
 static jobject get_server_player(JNIEnv* env, jobject mc) {
     jobject server = env->CallObjectMethod(mc, m_getServer);
     if (env->ExceptionCheck() || !server) { env->ExceptionClear(); return nullptr; }
@@ -439,7 +387,6 @@ static jobject get_server_player(JNIEnv* env, jobject mc) {
     return sp;
 }
 
-// 直接设置实体的移动速度属性基础值（绕过 abilities 同步的不确定性）
 static void set_move_speed_attr(JNIEnv* env, jobject ent, double base) {
     jobject cont = env->CallObjectMethod(ent, m_getAttributes);
     if (!cont || env->ExceptionCheck()) { env->ExceptionClear(); return; }
@@ -471,7 +418,6 @@ void mc_apply_features() {
     if (abilities) {
         bool needSync = false;
 
-        // ---- 飞行 ----
         if (g_cfg.fly) {
             env->SetBooleanField(abilities, f_ab_allowFlying, JNI_TRUE);
             env->SetBooleanField(abilities, f_ab_flying, JNI_TRUE);
@@ -484,7 +430,6 @@ void mc_apply_features() {
             needSync = true;
         }
 
-        // ---- 地面加速：walkSpeed 字段（游戏自身 updateAttributes 会消费它）----
         if (g_cfg.speed) {
             env->SetFloatField(abilities, f_ab_walkSpeed, 0.1f * g_cfg.speedMult);
             if (!prevSpeed || prevSpMult != g_cfg.speedMult) needSync = true;
@@ -493,16 +438,14 @@ void mc_apply_features() {
             needSync = true;
         }
 
-        // 仅在状态变化时同步能力包（避免每帧发包）
         if (needSync) env->CallVoidMethod(player, m_sendAbilitiesUpdate);
-        if (env->ExceptionCheck()) env->ExceptionClear(); // 同步异常不允许外溢
+        if (env->ExceptionCheck()) env->ExceptionClear();
         env->DeleteLocalRef(abilities);
     }
     prevFly = g_cfg.fly;  prevFlySp = g_cfg.flySpeed;
     prevSpeed = g_cfg.speed; prevSpMult = g_cfg.speedMult;
 
-    // ---- 地面加速：直接写移动速度属性（客户端+内置服务端玩家）----
-    //   字段同步是间接路径，直接写属性确保最终消费点被命中；保留冲刺 1.3 倍率
+    // walkSpeed 之外直接写 MOVEMENT_SPEED 属性基础值，命中最终消费点
     if (g_cfg.speed || prevSpeed) {
         float ws = g_cfg.speed ? 0.1f * g_cfg.speedMult : 0.1f;
         bool sprint = env->CallBooleanMethod(player, m_isSprinting) == JNI_TRUE;
@@ -518,7 +461,6 @@ void mc_apply_features() {
         }
     }
 
-    // ---- 全亮：gamma SimpleOption 设为 16.0 ----
     if (g_cfg.fullbright != prevFb) {
         jobject options = env->GetObjectField(mc, f_mc_options);
         if (options) {
@@ -536,9 +478,7 @@ void mc_apply_features() {
         prevFb = g_cfg.fullbright;
     }
 
-    // ---- ESP：实体发光透视（穿墙可见），每帧遍历 ----
-    //   开时强制 glowing=true，关时强制 false（同时负责恢复），
-    //   段内异常立即清除，避免后续实体调用被挂起异常静默掐断
+    // ESP：开时强制 glowing、关时强制恢复
     {
         jobject world = env->GetObjectField(mc, f_mc_world);
         if (world && !env->ExceptionCheck()) {
@@ -567,7 +507,6 @@ void mc_apply_features() {
         if (env->ExceptionCheck()) env->ExceptionClear();
     }
 
-    // ---- HUD 坐标 ----
     if (g_cfg.hud) {
         g_state.px = env->CallDoubleMethod(player, m_getX);
         g_state.py = env->CallDoubleMethod(player, m_getY);
@@ -575,7 +514,6 @@ void mc_apply_features() {
         if (env->ExceptionCheck()) env->ExceptionClear();
     }
 
-    // ---- 杀戮光环：每 10 帧攻击范围内最近的存活生物 ----
     static int kaTick = 0;
     if (g_cfg.killaura && (++kaTick % 10 == 0)) {
         jobject world = env->GetObjectField(mc, f_mc_world);
@@ -593,7 +531,6 @@ void mc_apply_features() {
                 jobject ent = env->CallObjectMethod(iter, m_it_next);
                 if (!ent) break;
                 if (env->ExceptionCheck()) env->ExceptionClear();
-                // 过滤：自己 / 排除玩家 / 排除生物 / 非 LivingEntity / 已死亡
                 bool ok = !env->IsSameObject(ent, player)
                        && !(g_cfg.kaExcludePlayers && env->IsInstanceOf(ent, c_PlayerEntity))
                        && !(g_cfg.kaExcludeMobs && env->IsInstanceOf(ent, c_MobEntity))
@@ -605,7 +542,7 @@ void mc_apply_features() {
                     double dy = env->CallDoubleMethod(ent, m_getY) - py;
                     double dz = env->CallDoubleMethod(ent, m_getZ) - pz;
                     double d2 = dx * dx + dy * dy + dz * dz;
-                    if (d2 < bestD2) { // 平方比较，免开方
+                    if (d2 < bestD2) {
                         bestD2 = d2;
                         if (best) env->DeleteLocalRef(best);
                         best = ent;
@@ -628,10 +565,9 @@ void mc_apply_features() {
         if (im) env->DeleteLocalRef(im);
     }
 
-    // ---- 自动图腾：副手无图腾时从背包 SWAP 一个到副手（每 10 帧检查）----
     static int totemTick = 0;
     if (g_cfg.autoTotem && (++totemTick % 10 == 0)) {
-        // 打开任意 GUI（背包/箱子等）时不动物品，避免干扰玩家操作
+        // 打开 GUI 时不动物品
         jobject curScreen = env->GetObjectField(mc, f_mc_currentScreen);
         if (!curScreen && !env->ExceptionCheck()) {
             bool hasTotem = false;
@@ -669,10 +605,8 @@ void mc_apply_features() {
                     if (found >= 0) {
                         jobject im = env->GetObjectField(mc, f_mc_interactionManager);
                         if (im) {
-                            // PlayerInventory.main 索引 -> 玩家背包界面槽位：
-                            // 0~8 快捷栏对应槽位 36~44，9~35 背包格槽位号相同
+                            // 快捷栏 0~8 对应界面槽位 36~44
                             int slot = (found < 9) ? (36 + found) : found;
-                            // SWAP + button=40：与副手交换
                             env->CallVoidMethod(im, m_clickSlot, 0, slot, 40, g_swapAction, player);
                             if (env->ExceptionCheck()) env->ExceptionClear();
                             env->DeleteLocalRef(im);

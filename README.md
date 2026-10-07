@@ -13,6 +13,11 @@
     <a href="https://github.com/LaoDay-114/InStart/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/LaoDay-114/InStart?style=flat"></a>
 </p>
 
+> [!WARNING]
+> 项目处于测试阶段
+> 
+> 并没有你想的那么稳定！
+
 ### 构建要求
 - CMake 3.14+
 - C++17编译器：MSVC 19.29+（Visual Studio 2019 16.11+）、GCC/MinGW-w64 12+，或Clang 14+

@@ -79,38 +79,5 @@ target("InStartInjector")
     add_syslinks("user32")
     add_ldflags("-static", "-static-libgcc", "-static-libstdc++", {force = true})
 
-target("InStartLauncher")
-    set_kind("binary")
-    set_targetdir(".")
-    set_basename("InStart")
-    add_files(
-        "launcher/main.cpp",
-        IMGUI .. "/imgui.cpp",
-        IMGUI .. "/imgui_draw.cpp",
-        IMGUI .. "/imgui_tables.cpp",
-        IMGUI .. "/imgui_widgets.cpp",
-        IMGUI .. "/backends/imgui_impl_win32.cpp",
-        IMGUI .. "/backends/imgui_impl_dx11.cpp")
-    add_includedirs(IMGUI, IMGUI .. "/backends")
-    add_defines("UNICODE", "_UNICODE")
-    add_syslinks("d3d11", "dxgi", "d3dcompiler", "dwmapi", "user32", "gdi32")
-    add_ldflags("-static", "-static-libgcc", "-static-libstdc++", {force = true})
-
-target("InStartUpdateManager")
-    set_kind("binary")
-    set_targetdir(".")
-    set_basename("InStartUpdateManager")
-    add_files("update/main.cpp", "update/update_check.cpp",
-              IMGUI .. "/imgui.cpp",
-              IMGUI .. "/imgui_draw.cpp",
-              IMGUI .. "/imgui_tables.cpp",
-              IMGUI .. "/imgui_widgets.cpp",
-              IMGUI .. "/backends/imgui_impl_win32.cpp",
-              IMGUI .. "/backends/imgui_impl_dx11.cpp")
-    add_includedirs("update", IMGUI, IMGUI .. "/backends")
-    add_defines("UNICODE", "_UNICODE")
-    add_syslinks("winhttp", "user32", "d3d11", "dxgi", "d3dcompiler", "dwmapi",
-                 "shell32")
-    add_rules("inst_version")
-    add_ldflags("-mwindows", "-static", "-static-libgcc", "-static-libstdc++",
-                {force = true})
+-- 启动器与更新器已迁移到 EUI-NEO + CMake（见根目录 CMakeLists.txt），
+-- xmake 只负责游戏内 DLL 与注入器。

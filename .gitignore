@@ -1,6 +1,8 @@
 # 编译产物
 build/
+build-cmake/
 .xmake/
+assets/
 InStart.dll
 InStart.dll.a
 InStartInjector.exe

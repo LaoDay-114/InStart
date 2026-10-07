@@ -2,13 +2,15 @@ name: build-release
 
 on:
   push:
-    branches: [master]
+    branches: [master, pre]
     paths:
       - 'src/**'
       - 'injector/**'
       - 'launcher/**'
       - 'update/**'
       - 'xmake.lua'
+      - 'CMakeLists.txt'
+      - '3rd/**'
       - '.github/workflows/release.yml'
   workflow_dispatch:
 
@@ -43,8 +45,14 @@ jobs:
       - name: 构建
         shell: bash
         run: |
+          # DLL 与注入器：xmake
           xmake f -p mingw --mingw='C:\msys64\mingw64' -m release -y
           xmake -j4
+          # 启动器与更新器：CMake + EUI-NEO
+          export PATH="/c/msys64/mingw64/bin:$PATH"
+          git submodule update --init --recursive
+          cmake -S . -B build-cmake -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-cmake -j4
 
       - name: 发布变更文件
         shell: bash
@@ -76,7 +84,7 @@ jobs:
             echo "## 本次文件"
           } > notes.md
 
-          if [ -z "$prev_sha" ] || changed xmake.lua .github; then
+          if [ -z "$prev_sha" ] || changed xmake.lua CMakeLists.txt 3rd .github; then
             assets=(InStart.dll InStartInjector.exe InStart.exe InStartUpdateManager.exe)
           else
             changed src && assets+=(InStart.dll)

@@ -1,20 +1,17 @@
 // 更新器：查询 GitHub Release，下载并替换有变化的文件。
-// 无参数启动为图形界面；--silent 静默检查并自动安装（无界面）。
+// 无参数启动为图形界面（EUI-NEO）；--silent 静默检查并自动安装（无界面）。
+#include "eui_neo.h"
+
 #include <windows.h>
-#include <d3d11.h>
 #include <dwmapi.h>
-#include <cstdio>
-#include <cstring>
-#include <string>
-#include <vector>
-#include <thread>
-#include <mutex>
-#include <atomic>
 #include <shellapi.h>
 
-#include "imgui.h"
-#include "backends/imgui_impl_win32.h"
-#include "backends/imgui_impl_dx11.h"
+#include <atomic>
+#include <cstdio>
+#include <cstring>
+#include <mutex>
+#include <string>
+#include <vector>
 
 #include "update_check.h"
 
@@ -26,9 +23,23 @@
 #define DWMWA_USE_IMMERSIVE_DARK_MODE 20
 #endif
 
+int eui_app_run(); // EUI-NEO 入口（EUI_APP_RUNNER_LIBRARY 只导出函数不含 main）
+
+namespace app {
+namespace {
+
+using eui::Color;
+
+const Color kAccent    = components::theme::defaultPrimary();
+const Color kAccentHi  = components::theme::color(0.35f, 0.55f, 0.95f);
+const Color kOkGreen   = components::theme::color(0.30f, 0.85f, 0.45f);
+const Color kErrRed    = components::theme::color(0.95f, 0.35f, 0.35f);
+const Color kText      = components::theme::color(1.00f, 1.00f, 1.00f);
+const Color kMuted     = components::theme::withOpacity(components::theme::dark().text, 0.55f);
+
 // ---------- 文件操作 ----------
 
-static std::wstring exe_dir() {
+std::wstring exe_dir() {
     wchar_t buf[MAX_PATH];
     GetModuleFileNameW(nullptr, buf, MAX_PATH);
     std::wstring p(buf);
@@ -36,7 +47,7 @@ static std::wstring exe_dir() {
     return p.substr(0, s + 1);
 }
 
-static bool valid_name(const std::string& n) {
+bool valid_name(const std::string& n) {
     if (n.empty() || n.size() > 64) return false;
     if (n.find("..") != std::string::npos) return false;
     for (char c : n)
@@ -44,7 +55,7 @@ static bool valid_name(const std::string& n) {
     return true;
 }
 
-static bool read_state(const std::wstring& dir, std::string& tag) {
+bool read_state(const std::wstring& dir, std::string& tag) {
     FILE* f = _wfopen((dir + L"InStartUpdate.state").c_str(), L"rb");
     if (!f) return false;
     char line[256];
@@ -59,7 +70,7 @@ static bool read_state(const std::wstring& dir, std::string& tag) {
     return !tag.empty();
 }
 
-static void write_state(const std::wstring& dir, const std::string& tag) {
+void write_state(const std::wstring& dir, const std::string& tag) {
     FILE* f = _wfopen((dir + L"InStartUpdate.state").c_str(), L"wb");
     if (!f) return;
     fprintf(f, "installed=%s\n", tag.c_str());
@@ -71,9 +82,9 @@ struct Placed {
 };
 
 // 下载并替换单个文件：先下到 .new，原文件改名 .old，成功后清理
-static int install_asset(const UpdateAsset& a, const std::wstring& dir,
-                         std::vector<Placed>& placed,
-                         DownloadProgress cb = nullptr, void* user = nullptr) {
+int install_asset(const UpdateAsset& a, const std::wstring& dir,
+                  std::vector<Placed>& placed,
+                  DownloadProgress cb = nullptr, void* user = nullptr) {
     if (!valid_name(a.name)) return 1;
 
     std::wstring wname = utf8_to_wide(a.name);
@@ -109,8 +120,8 @@ static int install_asset(const UpdateAsset& a, const std::wstring& dir,
     return 0;
 }
 
-static int install(const UpdateInfo& info, const std::wstring& dir,
-                   std::vector<Placed>& placed) {
+int install(const UpdateInfo& info, const std::wstring& dir,
+            std::vector<Placed>& placed) {
     for (const UpdateAsset& a : info.assets)
         if (install_asset(a, dir, placed) != 0) return 1;
     return placed.empty() && !info.assets.empty() ? 1 : 0;
@@ -118,7 +129,7 @@ static int install(const UpdateInfo& info, const std::wstring& dir,
 
 // ---------- 静默模式 ----------
 
-static int run_silent() {
+int run_silent() {
     std::wstring dir = exe_dir();
     UpdateInfo info = fetch_latest_release();
     if (!info.ok) return 1;
@@ -135,23 +146,6 @@ static int run_silent() {
 
 // ---------- 图形界面 ----------
 
-static ID3D11Device*           g_dev = nullptr;
-static ID3D11DeviceContext*    g_ctx = nullptr;
-static IDXGISwapChain*         g_swap = nullptr;
-static ID3D11RenderTargetView* g_rtv = nullptr;
-static UINT g_resizeW = 0, g_resizeH = 0;
-
-// EUI-NEO dark 主题移植
-static const ImVec4 ACCENT     = ImVec4(0.22f, 0.44f, 0.88f, 1.0f);
-static const ImVec4 ACCENT_H   = ImVec4(0.35f, 0.55f, 0.95f, 1.0f);
-static const ImVec4 OK_GREEN   = ImVec4(0.30f, 0.85f, 0.45f, 1.0f);
-static const ImVec4 ERR_RED    = ImVec4(0.95f, 0.35f, 0.35f, 1.0f);
-static const ImVec4 BG_DARK    = ImVec4(0.10f, 0.10f, 0.12f, 1.0f);
-static const ImVec4 SURFACE    = ImVec4(0.15f, 0.15f, 0.18f, 1.0f);
-static const ImVec4 SURFACE_H  = ImVec4(0.25f, 0.25f, 0.28f, 1.0f);
-static const ImVec4 SURFACE_A  = ImVec4(0.35f, 0.35f, 0.38f, 1.0f);
-static const ImVec4 BORDER     = ImVec4(0.30f, 0.30f, 0.30f, 1.0f);
-
 enum UiState {
     ST_CHECKING,     // 正在查询 GitHub
     ST_LATEST,       // 已是最新
@@ -161,107 +155,68 @@ enum UiState {
     ST_FAILED        // 出错
 };
 
-static std::atomic<int> g_ui{ ST_CHECKING };
-static UpdateInfo  g_info;             // 查询到的最新版本
-static std::string g_baseline;         // 已安装基准（state 文件或编译版本）
-static std::string g_err;              // 错误信息
-static std::wstring g_dir;
+std::atomic<int> g_ui{ ST_CHECKING };
+UpdateInfo  g_info;             // 查询到的最新版本
+std::string g_baseline;         // 已安装基准（state 文件或编译版本）
+std::string g_err;              // 错误信息
+std::wstring g_dir;
 
-static std::mutex  g_pmtx;
-static std::string g_pfile;            // 当前下载的文件名
-static std::atomic<int> g_pindex{ 0 }, g_pcount{ 0 };
-static std::atomic<unsigned long long> g_pdone{ 0 }, g_ptotal{ 0 };
-static std::vector<Placed> g_placed;
+std::mutex  g_pmtx;
+std::string g_pfile;            // 当前下载的文件名
+std::atomic<int> g_pindex{ 0 }, g_pcount{ 0 };
+std::atomic<unsigned long long> g_pdone{ 0 }, g_ptotal{ 0 };
+std::vector<Placed> g_placed;
 
-static bool create_device(HWND hwnd) {
-    DXGI_SWAP_CHAIN_DESC sd = {};
-    sd.BufferCount = 2;
-    sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-    sd.BufferDesc.RefreshRate.Numerator = 60;
-    sd.BufferDesc.RefreshRate.Denominator = 1;
-    sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-    sd.OutputWindow = hwnd;
-    sd.SampleDesc.Count = 1;
-    sd.Windowed = TRUE;
-    sd.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
-    UINT flags = 0;
-    D3D_FEATURE_LEVEL fl;
-    const D3D_FEATURE_LEVEL fls[] = { D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_0 };
-    if (FAILED(D3D11CreateDeviceAndSwapChain(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr,
-            flags, fls, 2, D3D11_SDK_VERSION, &sd, &g_swap, &g_dev, &fl, &g_ctx)))
-        return false;
-    ID3D11Texture2D* back = nullptr;
-    g_swap->GetBuffer(0, IID_PPV_ARGS(&back));
-    g_dev->CreateRenderTargetView(back, nullptr, &g_rtv);
-    back->Release();
-    return true;
-}
-
-static void cleanup_device() {
-    if (g_rtv)  { g_rtv->Release();  g_rtv = nullptr; }
-    if (g_swap) { g_swap->Release(); g_swap = nullptr; }
-    if (g_ctx)  { g_ctx->Release();  g_ctx = nullptr; }
-    if (g_dev)  { g_dev->Release();  g_dev = nullptr; }
-}
-
-static void reset_rtv() {
-    if (g_rtv) { g_rtv->Release(); g_rtv = nullptr; }
-    ID3D11Texture2D* back = nullptr;
-    g_swap->GetBuffer(0, IID_PPV_ARGS(&back));
-    g_dev->CreateRenderTargetView(back, nullptr, &g_rtv);
-    back->Release();
-}
-
-static void progress_cb(void*, unsigned long long done, unsigned long long total) {
+void progress_cb(void*, unsigned long long done, unsigned long long total) {
     g_pdone = done;
     g_ptotal = total;
+    requestUpdate();
 }
 
-static void start_check() {
-    update_check_reset();
-    update_check_async();
+void start_check() {
     g_ui = ST_CHECKING;
+    core::async::restart("update.check",
+        [] { return fetch_latest_release(); },
+        [](core::async::Result<UpdateInfo> r) {
+            if (!r.ok || !r.value.ok) {
+                g_err = "检查更新失败：无法连接 GitHub";
+                g_ui = ST_FAILED;
+                return;
+            }
+            g_info = std::move(r.value);
+            long long have = update_build_num(g_baseline);
+            g_ui = (g_info.num <= have || g_info.assets.empty())
+                       ? ST_LATEST : ST_AVAILABLE;
+        });
 }
 
-static void start_download() {
+void start_download() {
     g_ui = ST_DOWNLOADING;
     g_placed.clear();
     g_pindex = 0;
     g_pcount = (int)g_info.assets.size();
     g_pdone = g_ptotal = 0;
     g_err.clear();
-    std::thread([] {
+    core::async::restart("update.download", [] {
         for (int i = 0; i < (int)g_info.assets.size(); ++i) {
             const UpdateAsset& a = g_info.assets[i];
             g_pindex = i + 1;
             { std::lock_guard<std::mutex> lk(g_pmtx); g_pfile = a.name; }
             g_pdone = g_ptotal = 0;
+            requestUpdate();
             if (install_asset(a, g_dir, g_placed, progress_cb, nullptr) != 0) {
                 g_err = "下载或替换失败：" + a.name + "（请关闭游戏和启动器后重试）";
-                g_ui = ST_FAILED;
-                return;
+                return false;
             }
         }
         write_state(g_dir, g_info.tag);
-        g_ui = ST_DONE;
-    }).detach();
+        return true;
+    }, [](core::async::Result<bool> r) {
+        g_ui = (r.ok && r.value) ? ST_DONE : ST_FAILED;
+    });
 }
 
-static void poll_check() {
-    if (g_ui != ST_CHECKING || !update_check_done()) return;
-    UpdateInfo info;
-    update_copy(info);
-    if (!info.ok) {
-        g_err = "检查更新失败：无法连接 GitHub";
-        g_ui = ST_FAILED;
-        return;
-    }
-    g_info = std::move(info);
-    long long have = update_build_num(g_baseline);
-    g_ui = (g_info.num <= have || g_info.assets.empty()) ? ST_LATEST : ST_AVAILABLE;
-}
-
-static void fmt_size(unsigned long long b, char* out, size_t n) {
+void fmt_size(unsigned long long b, char* out, size_t n) {
     if (b >= 1024ull * 1024 * 1024)
         snprintf(out, n, "%.2f GB", b / 1073741824.0);
     else if (b >= 1024ull * 1024)
@@ -272,297 +227,290 @@ static void fmt_size(unsigned long long b, char* out, size_t n) {
         snprintf(out, n, "%llu B", b);
 }
 
-static void status_dot(ImU32 color) {
-    ImVec2 p = ImGui::GetCursorScreenPos();
-    ImGui::GetWindowDrawList()->AddCircleFilled(
-        ImVec2(p.x + 7, p.y + ImGui::GetTextLineHeight() * 0.55f), 5, color);
-    ImGui::Dummy(ImVec2(0, 0));
-    ImGui::SameLine(20);
+void close_window() {
+    HWND hwnd = FindWindowW(nullptr, L"InStart 更新");
+    if (hwnd) PostMessageW(hwnd, WM_CLOSE, 0, 0);
 }
 
-static void draw_ui() {
-    ImGuiViewport* vp = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(vp->Pos);
-    ImGui::SetNextWindowSize(vp->Size);
-    ImGui::Begin("##main", nullptr,
-        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
-        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
-        ImGuiWindowFlags_NoBringToFrontOnFocus);
+void dark_title_bar_once() {
+    static bool done = false;
+    if (done) return;
+    done = true;
+    HWND hwnd = FindWindowW(nullptr, L"InStart 更新");
+    if (!hwnd) return;
+    BOOL dark = TRUE;
+    DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof dark);
+    COLORREF caption = RGB(0x1A, 0x1A, 0x1F); // 与主题背景一致
+    DwmSetWindowAttribute(hwnd, 35, &caption, sizeof caption);
+}
 
-    ImGui::PushFont(ImGui::GetIO().Fonts->Fonts.Size > 1
-                    ? ImGui::GetIO().Fonts->Fonts[1] : nullptr);
-    ImGui::TextColored(ACCENT_H, "InStart 更新");
-    ImGui::PopFont();
-    ImGui::SameLine();
-    ImGui::TextDisabled("自动构建版更新工具");
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
-
-    UiState ui = (UiState)g_ui.load();
-
-    // 状态行
-    char ver[128];
+Color dot_color(int ui) {
     switch (ui) {
-    case ST_CHECKING: {
-        const char* dots[] = { "", ".", "..", "..." };
-        int k = ((int)(ImGui::GetTime() * 2.0)) % 4;
-        snprintf(ver, sizeof ver, "正在检查更新%s", dots[k]);
-        status_dot(IM_COL32(150, 152, 160, 255));
-        ImGui::TextUnformatted(ver);
-        break;
-    }
     case ST_LATEST:
-        status_dot(IM_COL32(77, 217, 115, 255));
-        ImGui::Text("已是最新版本（%s）", INST_VERSION);
-        break;
+    case ST_DONE:   return kOkGreen;
+    case ST_FAILED: return kErrRed;
     case ST_AVAILABLE:
-        status_dot(ImGui::GetColorU32(ACCENT));
-        ImGui::Text("发现新版本：%s", g_info.tag.c_str());
-        break;
-    case ST_DOWNLOADING:
-        status_dot(ImGui::GetColorU32(ACCENT));
-        ImGui::Text("正在下载（%d / %d）", g_pindex.load(), g_pcount.load());
-        break;
-    case ST_DONE:
-        status_dot(IM_COL32(77, 217, 115, 255));
-        ImGui::TextUnformatted("更新完成，重启游戏或启动器后生效");
-        break;
-    case ST_FAILED:
-        status_dot(IM_COL32(242, 89, 89, 255));
-        ImGui::TextColored(ERR_RED, "%s", g_err.c_str());
-        break;
+    case ST_DOWNLOADING: return kAccent;
+    default:        return components::theme::color(0.59f, 0.60f, 0.63f);
     }
+}
 
-    ImGui::TextDisabled("当前版本 %s", INST_VERSION);
-    if (ui == ST_AVAILABLE)
-        ImGui::TextDisabled("最新版本 %s", g_info.tag.c_str());
+std::string status_text(int ui) {
+    switch (ui) {
+    case ST_CHECKING:    return "正在检查更新…";
+    case ST_LATEST:      return "已是最新版本（" + std::string(INST_VERSION) + "）";
+    case ST_AVAILABLE:   return "发现新版本：" + g_info.tag;
+    case ST_DOWNLOADING: return "正在下载（" + std::to_string(g_pindex.load()) +
+                                 " / " + std::to_string(g_pcount.load()) + "）";
+    case ST_DONE:        return "更新完成，重启游戏或启动器后生效";
+    default:             return g_err;
+    }
+}
 
-    ImGui::Spacing();
-
-    float bottomH = 52.f;
-    if (ui == ST_AVAILABLE) {
-        ImGui::TextDisabled("更新内容");
-        ImGui::BeginChild("##notes", ImVec2(0, -bottomH), true);
-        if (g_info.notes.empty()) ImGui::TextDisabled("（无更新说明）");
-        else ImGui::TextWrapped("%s", g_info.notes.c_str());
-        ImGui::EndChild();
-    } else if (ui == ST_DOWNLOADING) {
+void build_content(eui::Ui& ui, float w, float h) {
+    const int state = g_ui.load();
+    if (state == ST_AVAILABLE) {
+        ui.text("notes.label")
+            .text("更新内容")
+            .fontSize(13.0f)
+            .color(kMuted)
+            .build();
+        components::card(ui, "card.notes")
+            .width(w)
+            .height(h)
+            .radius(12.0f)
+            .padding(14.0f)
+            .content([&] {
+                components::scrollView(ui, "notes.scroll")
+                    .size(w - 28.0f, h - 28.0f)
+                    .content([&](eui::Ui& sui, float contentW, float) {
+                        sui.text("notes.text")
+                            .width(contentW)
+                            .text(g_info.notes.empty() ? "（无更新说明）" : g_info.notes)
+                            .fontSize(13.0f)
+                            .lineHeight(19.0f)
+                            .color(g_info.notes.empty() ? kMuted : kText)
+                            .wrap(true)
+                            .build();
+                    })
+                    .build();
+            })
+            .build();
+    } else if (state == ST_DOWNLOADING) {
         unsigned long long done = g_pdone.load(), total = g_ptotal.load();
-        char a[32] = "?", b[32] = "?";
+        char a[32], b[32];
         fmt_size(done, a, sizeof a);
         if (total > 0) fmt_size(total, b, sizeof b);
         else snprintf(b, sizeof b, "未知大小");
+        std::string fname;
+        { std::lock_guard<std::mutex> lk(g_pmtx); fname = g_pfile; }
 
-        char fname[128];
-        { std::lock_guard<std::mutex> lk(g_pmtx);
-          snprintf(fname, sizeof fname, "%s", g_pfile.c_str()); }
-        ImGui::TextDisabled("%s  %s / %s", fname, a, b);
-
-        float frac = total > 0 ? (float)((double)done / total) : 0.f;
-        char overlay[32] = "";
-        if (total > 0) snprintf(overlay, sizeof overlay, "%.0f%%", frac * 100.f);
-        ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ACCENT);
-        ImGui::ProgressBar(frac, ImVec2(-1, 0), total > 0 ? overlay : nullptr);
-        ImGui::PopStyleColor();
-        ImGui::TextDisabled("下载完成后自动替换文件，可随时关闭窗口取消");
-    } else if (ui == ST_DONE) {
-        ImGui::TextDisabled("已更新 %d 个文件", (int)g_placed.size());
-        ImGui::BeginChild("##files", ImVec2(0, -bottomH), true);
-        for (const Placed& p : g_placed) {
-            const wchar_t* fn = wcsrchr(p.final.c_str(), L'\\');
-            fn = fn ? fn + 1 : p.final.c_str();
-            char name[128];
-            WideCharToMultiByte(CP_UTF8, 0, fn, -1, name, sizeof name,
-                                nullptr, nullptr);
-            ImGui::BulletText("%s", name);
-        }
-        ImGui::EndChild();
-    } else if (ui == ST_FAILED) {
-        ImGui::Dummy(ImVec2(0, 8));
-        ImGui::TextDisabled("可点击下方“重试”再次检查");
+        ui.text("dl.file")
+            .size(w, 18.0f)
+            .text(fname + "  " + a + " / " + b)
+            .fontSize(12.0f)
+            .color(kMuted)
+            .build();
+        const float frac = total > 0 ? (float)((double)done / total) : 0.0f;
+        components::progress(ui, "dl.progress")
+            .size(w, 10.0f)
+            .value(frac)
+            .build();
+        ui.text("dl.hint")
+            .size(w, 18.0f)
+            .text("下载完成后自动替换文件，可随时关闭窗口取消")
+            .fontSize(12.0f)
+            .color(kMuted)
+            .build();
+    } else if (state == ST_DONE) {
+        ui.text("done.count")
+            .text("已更新 " + std::to_string(g_placed.size()) + " 个文件")
+            .fontSize(13.0f)
+            .color(kMuted)
+            .build();
+        components::card(ui, "card.files")
+            .width(w)
+            .height(h)
+            .radius(12.0f)
+            .padding(14.0f)
+            .content([&] {
+                components::scrollView(ui, "files.scroll")
+                    .size(w - 28.0f, h - 28.0f)
+                    .gap(4.0f)
+                    .content([&](eui::Ui& sui, float, float) {
+                        for (size_t i = 0; i < g_placed.size(); ++i) {
+                            const wchar_t* fn = wcsrchr(g_placed[i].final.c_str(), L'\\');
+                            fn = fn ? fn + 1 : g_placed[i].final.c_str();
+                            char name[128];
+                            WideCharToMultiByte(CP_UTF8, 0, fn, -1, name,
+                                                sizeof name, nullptr, nullptr);
+                            sui.text("done.file." + std::to_string(i))
+                                .text(std::string("• ") + name)
+                                .fontSize(13.0f)
+                                .color(kText)
+                                .build();
+                        }
+                    })
+                    .build();
+            })
+            .build();
+    } else if (state == ST_FAILED) {
+        ui.text("failed.hint")
+            .text("可点击下方“重试”再次检查")
+            .fontSize(13.0f)
+            .color(kMuted)
+            .build();
     }
-
-    // 底部按钮（右对齐）
-    float h = 36.f, w1 = 110.f, w2 = 140.f, gap = 10.f;
-    ImGui::SetCursorPosY(ImGui::GetWindowHeight() - ImGui::GetStyle().WindowPadding.y - h);
-    ImGui::SetCursorPosX(ImGui::GetWindowWidth() - ImGui::GetStyle().WindowPadding.x
-                         - w1 - gap - w2);
-
-    if (ui == ST_AVAILABLE) {
-        if (ImGui::Button("打开下载页", ImVec2(w1, h)))
-            ShellExecuteW(nullptr, L"open",
-                          utf8_to_wide(g_info.page).c_str(), nullptr, nullptr,
-                          SW_SHOWNORMAL);
-        ImGui::SameLine();
-        ImGui::PushStyleColor(ImGuiCol_Button, ACCENT);
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ACCENT_H);
-        if (ImGui::Button("立即更新", ImVec2(w2, h))) start_download();
-        ImGui::PopStyleColor(2);
-    } else if (ui == ST_CHECKING || ui == ST_DOWNLOADING) {
-        ImGui::BeginDisabled(true);
-        ImGui::Button(ui == ST_CHECKING ? "检查中" : "下载中", ImVec2(w2, h));
-        ImGui::EndDisabled();
-    } else {
-        if (ui != ST_DONE) {
-            if (ImGui::Button("重试", ImVec2(w1, h))) start_check();
-            ImGui::SameLine();
-        }
-        if (ImGui::Button("关闭", ImVec2(w2, h)))
-            PostQuitMessage(0);
-    }
-
-    ImGui::End();
 }
 
-extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND, UINT, WPARAM, LPARAM);
+void build_footer(eui::Ui& ui, float w) {
+    const int state = g_ui.load();
+    ui.row("footer")
+        .size(w, 40.0f)
+        .gap(10.0f)
+        .justifyContent(eui::Align::END)
+        .alignItems(eui::Align::CENTER)
+        .content([&] {
+            if (state == ST_AVAILABLE) {
+                components::button(ui, "btn.page")
+                    .size(110.0f, 36.0f)
+                    .text("打开下载页")
+                    .fontSize(14.0f)
+                    .theme(components::theme::dark(), false)
+                    .onClick([] {
+                        ShellExecuteW(nullptr, L"open",
+                                      utf8_to_wide(g_info.page).c_str(),
+                                      nullptr, nullptr, SW_SHOWNORMAL);
+                    })
+                    .build();
+                components::button(ui, "btn.update")
+                    .size(140.0f, 36.0f)
+                    .text("立即更新")
+                    .fontSize(14.0f)
+                    .theme(components::theme::dark(), true)
+                    .onClick([] { start_download(); })
+                    .build();
+            } else if (state == ST_CHECKING || state == ST_DOWNLOADING) {
+                components::button(ui, "btn.busy")
+                    .size(140.0f, 36.0f)
+                    .text(state == ST_CHECKING ? "检查中" : "下载中")
+                    .fontSize(14.0f)
+                    .theme(components::theme::dark(), true)
+                    .disabled(true)
+                    .build();
+            } else {
+                if (state != ST_DONE) {
+                    components::button(ui, "btn.retry")
+                        .size(110.0f, 36.0f)
+                        .text("重试")
+                        .fontSize(14.0f)
+                        .theme(components::theme::dark(), false)
+                        .onClick([] { start_check(); })
+                        .build();
+                }
+                components::button(ui, "btn.close")
+                    .size(140.0f, 36.0f)
+                    .text("关闭")
+                    .fontSize(14.0f)
+                    .theme(components::theme::dark(), true)
+                    .onClick([] { close_window(); })
+                    .build();
+            }
+        })
+        .build();
+}
 
-static LRESULT WINAPI wnd_proc(HWND h, UINT msg, WPARAM w, LPARAM l) {
-    if (ImGui_ImplWin32_WndProcHandler(h, msg, w, l)) return true;
-    switch (msg) {
-    case WM_SIZE:
-        if (g_dev && w != SIZE_MINIMIZED) { g_resizeW = LOWORD(l); g_resizeH = HIWORD(l); }
-        return 0;
-    case WM_DESTROY:
-        PostQuitMessage(0);
-        return 0;
+} // namespace
+
+const DslAppConfig& dslAppConfig() {
+    static const DslAppConfig config = DslAppConfig{}
+        .title("InStart 更新")
+        .pageId("updater")
+        .clearColor(components::theme::dark().background)
+        .windowSize(560, 460)
+        .resizable(false)
+        .textFont("C:/Windows/Fonts/msyh.ttc")
+        .fps(90.0);
+    return config;
+}
+
+void compose(eui::Ui& ui, const eui::Screen& screen) {
+    dark_title_bar_once();
+    static bool first = true;
+    if (first) {
+        first = false;
+        g_dir = exe_dir();
+        if (!read_state(g_dir, g_baseline)) g_baseline = INST_VERSION;
+        start_check();
     }
-    return DefWindowProcW(h, msg, w, l);
+
+    const float pad = 24.0f;
+    const float w = screen.width - pad * 2.0f;
+    const float gap = 12.0f;
+    const float headerH = 34.0f;
+    const float statusH = 24.0f;
+    const float verH = 18.0f;
+    const float footerH = 40.0f;
+    const int state = g_ui.load();
+    const float contentH = screen.height - pad * 2.0f - headerH - statusH - verH -
+                           footerH - gap * 4.0f - 18.0f;
+
+    ui.column("root")
+        .size(screen.width, screen.height)
+        .padding(pad)
+        .gap(gap)
+        .content([&] {
+            ui.row("header").size(w, headerH).gap(12.0f)
+                .alignItems(eui::Align::CENTER)
+                .content([&] {
+                    ui.text("header.title")
+                        .text("InStart 更新")
+                        .fontSize(24.0f)
+                        .color(kAccentHi)
+                        .build();
+                    ui.text("header.sub")
+                        .text("自动构建版更新工具")
+                        .fontSize(12.0f)
+                        .color(kMuted)
+                        .build();
+                })
+                .build();
+
+            ui.row("status").size(w, statusH).gap(10.0f)
+                .alignItems(eui::Align::CENTER)
+                .content([&] {
+                    ui.rect("status.dot")
+                        .size(10.0f, 10.0f)
+                        .color(dot_color(state))
+                        .radius(5.0f)
+                        .build();
+                    ui.text("status.text")
+                        .text(status_text(state))
+                        .fontSize(14.0f)
+                        .color(state == ST_FAILED ? kErrRed : kText)
+                        .build();
+                })
+                .build();
+
+            std::string verLine = "当前版本 " + std::string(INST_VERSION);
+            if (state == ST_AVAILABLE) verLine += "    最新版本 " + g_info.tag;
+            ui.text("version")
+                .size(w, verH)
+                .text(verLine)
+                .fontSize(12.0f)
+                .color(kMuted)
+                .build();
+
+            build_content(ui, w, contentH);
+            build_footer(ui, w);
+        })
+        .build();
 }
 
-static void apply_style() {
-    ImGuiStyle& s = ImGui::GetStyle();
-    s.WindowRounding = 0.f;
-    s.ChildRounding = 12.f;
-    s.FrameRounding = 8.f;
-    s.PopupRounding = 10.f;
-    s.ScrollbarRounding = 12.f;
-    s.GrabRounding = 8.f;
-    s.TabRounding = 8.f;
-    s.FramePadding = ImVec2(10, 10);
-    s.ItemSpacing = ImVec2(12, 10);
-    s.WindowPadding = ImVec2(24, 20);
-    s.ScrollbarSize = 8.f;
-    s.WindowBorderSize = 0.f;
-    s.ChildBorderSize = 1.f;
+} // namespace app
 
-    ImVec4* c = s.Colors;
-    c[ImGuiCol_WindowBg]        = BG_DARK;
-    c[ImGuiCol_ChildBg]         = SURFACE;
-    c[ImGuiCol_PopupBg]         = ImVec4(SURFACE.x, SURFACE.y, SURFACE.z, 0.98f);
-    c[ImGuiCol_Border]          = ImVec4(BORDER.x, BORDER.y, BORDER.z, 0.60f);
-    c[ImGuiCol_Text]            = ImVec4(1.00f, 1.00f, 1.00f, 1.0f);
-    c[ImGuiCol_TextDisabled]    = ImVec4(1.00f, 1.00f, 1.00f, 0.55f);
-    c[ImGuiCol_FrameBg]         = SURFACE;
-    c[ImGuiCol_FrameBgHovered]  = SURFACE_H;
-    c[ImGuiCol_FrameBgActive]   = SURFACE_A;
-    c[ImGuiCol_Button]          = SURFACE;
-    c[ImGuiCol_ButtonHovered]   = SURFACE_H;
-    c[ImGuiCol_ButtonActive]    = SURFACE_A;
-    c[ImGuiCol_Header]          = ImVec4(ACCENT.x, ACCENT.y, ACCENT.z, 0.18f);
-    c[ImGuiCol_HeaderHovered]   = ImVec4(ACCENT.x, ACCENT.y, ACCENT.z, 0.32f);
-    c[ImGuiCol_HeaderActive]    = ImVec4(ACCENT.x, ACCENT.y, ACCENT.z, 0.45f);
-    c[ImGuiCol_ScrollbarBg]     = ImVec4(0, 0, 0, 0);
-    c[ImGuiCol_ScrollbarGrab]   = SURFACE_H;
-    c[ImGuiCol_ScrollbarGrabHovered] = SURFACE_A;
-    c[ImGuiCol_ScrollbarGrabActive]  = SURFACE_A;
-    c[ImGuiCol_Separator]       = ImVec4(BORDER.x, BORDER.y, BORDER.z, 0.60f);
-    c[ImGuiCol_CheckMark]       = ACCENT;
-    c[ImGuiCol_SliderGrab]      = ACCENT;
-    c[ImGuiCol_SliderGrabActive]= ACCENT_H;
-    c[ImGuiCol_PlotHistogram]   = ACCENT;
-}
-
-int WINAPI WinMain(HINSTANCE inst, HINSTANCE, LPSTR, int) {
+int main() {
     if (wcsstr(GetCommandLineW(), L"--silent"))
-        return run_silent();
-
-    g_dir = exe_dir();
-    if (!read_state(g_dir, g_baseline)) g_baseline = INST_VERSION;
-
-    WNDCLASSEXW wc = { sizeof wc, CS_CLASSDC, wnd_proc, 0, 0, inst,
-                       nullptr, LoadCursor(nullptr, IDC_ARROW), nullptr, nullptr,
-                       L"InStartUpdater", nullptr };
-    RegisterClassExW(&wc);
-
-    RECT r = { 0, 0, 560, 430 };
-    DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
-    AdjustWindowRect(&r, style, FALSE);
-    int w = r.right - r.left, h = r.bottom - r.top;
-    HWND hwnd = CreateWindowW(wc.lpszClassName, L"InStart 更新", style,
-        (GetSystemMetrics(SM_CXSCREEN) - w) / 2,
-        (GetSystemMetrics(SM_CYSCREEN) - h) / 2,
-        w, h, nullptr, nullptr, inst, nullptr);
-    if (!hwnd) return 1;
-
-    // 深色标题栏（Win10 1809+，老系统自动忽略）
-    BOOL dark = TRUE;
-    DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof dark);
-    COLORREF caption = 0x001E1919;  // 与 BG_DARK 一致
-    DwmSetWindowAttribute(hwnd, 35, &caption, sizeof caption);
-
-    if (!create_device(hwnd)) { cleanup_device(); return 1; }
-    ShowWindow(hwnd, SW_SHOWDEFAULT);
-    UpdateWindow(hwnd);
-
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO();
-    io.IniFilename = nullptr;
-
-    apply_style();
-    ImGui_ImplWin32_Init(hwnd);
-    ImGui_ImplDX11_Init(g_dev, g_ctx);
-
-    ImFontConfig fc;
-    fc.FontNo = 0;
-    ImFont* cn = io.Fonts->AddFontFromFileTTF(
-        "C:\\Windows\\Fonts\\msyh.ttc", 18.f, &fc,
-        io.Fonts->GetGlyphRangesChineseSimplifiedCommon());
-    ImFontConfig fc2;
-    fc2.FontNo = 0;
-    ImFont* title = io.Fonts->AddFontFromFileTTF(
-        "C:\\Windows\\Fonts\\msyh.ttc", 26.f, &fc2,
-        io.Fonts->GetGlyphRangesChineseSimplifiedCommon());
-    if (!cn) io.Fonts->AddFontDefault();
-    (void)title;
-
-    start_check();
-
-    MSG msg = {};
-    while (msg.message != WM_QUIT) {
-        if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
-            TranslateMessage(&msg);
-            DispatchMessage(&msg);
-            continue;
-        }
-
-        if (g_resizeW && g_resizeH) {
-            g_swap->ResizeBuffers(0, g_resizeW, g_resizeH, DXGI_FORMAT_UNKNOWN, 0);
-            reset_rtv();
-            g_resizeW = g_resizeH = 0;
-        }
-
-        poll_check();
-
-        ImGui_ImplDX11_NewFrame();
-        ImGui_ImplWin32_NewFrame();
-        ImGui::NewFrame();
-        draw_ui();
-        ImGui::Render();
-
-        g_ctx->OMSetRenderTargets(1, &g_rtv, nullptr);
-        float clear[4] = { BG_DARK.x, BG_DARK.y, BG_DARK.z, 1.f };
-        g_ctx->ClearRenderTargetView(g_rtv, clear);
-        ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
-        g_swap->Present(1, 0);
-    }
-
-    ImGui_ImplDX11_Shutdown();
-    ImGui_ImplWin32_Shutdown();
-    ImGui::DestroyContext();
-    cleanup_device();
-    DestroyWindow(hwnd);
-    UnregisterClassW(wc.lpszClassName, inst);
-    return 0;
+        return app::run_silent();
+    return eui_app_run();
 }

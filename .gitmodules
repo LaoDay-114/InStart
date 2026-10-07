@@ -1,0 +1,3 @@
+[submodule "3rd/EUI-NEO"]
+	path = 3rd/EUI-NEO
+	url = https://github.com/sudoevolve/EUI-NEO.git

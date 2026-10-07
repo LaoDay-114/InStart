@@ -92,7 +92,7 @@ void menu_draw() {
     if (updateBannerAt > 0.f && ImGui::GetTime() - updateBannerAt < 12.f) {
         char buf[96];
         snprintf(buf, sizeof buf, "发现新版本 %s，打开菜单 -> 状态", s_update.tag.c_str());
-        draw_banner(dl, font, buf, IM_COL32(90, 170, 255, 255), 64.0f);
+        draw_banner(dl, font, buf, IM_COL32(56, 113, 224, 255), 64.0f);
     }
 
     // 左上角坐标 HUD
@@ -209,7 +209,7 @@ void menu_draw() {
                 hooks_vk_name(g_cfg.bind[a], keyName, sizeof keyName);
 
                 if (waiting == a) {
-                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.30f, 0.60f, 0.80f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.44f, 0.88f, 1.0f));
                     if (ImGui::Button("请按键...", ImVec2(120, 0))) {
                         hooks_set_bind_waiting(-1);
                     }
@@ -236,7 +236,7 @@ void menu_draw() {
             } else if (!s_update.ok) {
                 ImGui::TextDisabled("更新检查失败（网络不可用）");
             } else if (updateAvailable) {
-                ImGui::TextColored(ImVec4(0.35f, 0.67f, 1.0f, 1.0f),
+                ImGui::TextColored(ImVec4(0.22f, 0.44f, 0.88f, 1.0f),
                                    "发现新版本: %s", s_update.tag.c_str());
                 ImGui::BeginChild("##notes", ImVec2(-1, 110), true);
                 if (s_update.notes.empty()) ImGui::TextDisabled("(无更新说明)");

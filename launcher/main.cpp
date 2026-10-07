@@ -47,11 +47,16 @@ static void rescan() {
     g_resultNew = false;
 }
 
-static const ImVec4 ACCENT   = ImVec4(0.45f, 0.40f, 0.95f, 1.0f);
-static const ImVec4 ACCENT_H = ImVec4(0.55f, 0.50f, 1.00f, 1.0f);
-static const ImVec4 OK_GREEN = ImVec4(0.30f, 0.85f, 0.45f, 1.0f);
-static const ImVec4 ERR_RED  = ImVec4(0.95f, 0.35f, 0.35f, 1.0f);
-static const ImVec4 BG_DARK  = ImVec4(0.075f, 0.08f, 0.10f, 1.0f);
+// EUI-NEO dark 主题移植
+static const ImVec4 ACCENT     = ImVec4(0.22f, 0.44f, 0.88f, 1.0f);  // primary
+static const ImVec4 ACCENT_H   = ImVec4(0.35f, 0.55f, 0.95f, 1.0f);
+static const ImVec4 OK_GREEN   = ImVec4(0.30f, 0.85f, 0.45f, 1.0f);
+static const ImVec4 ERR_RED    = ImVec4(0.95f, 0.35f, 0.35f, 1.0f);
+static const ImVec4 BG_DARK    = ImVec4(0.10f, 0.10f, 0.12f, 1.0f);  // background
+static const ImVec4 SURFACE    = ImVec4(0.15f, 0.15f, 0.18f, 1.0f);
+static const ImVec4 SURFACE_H  = ImVec4(0.25f, 0.25f, 0.28f, 1.0f);
+static const ImVec4 SURFACE_A  = ImVec4(0.35f, 0.35f, 0.38f, 1.0f);
+static const ImVec4 BORDER     = ImVec4(0.30f, 0.30f, 0.30f, 1.0f);
 
 static bool create_device(HWND hwnd) {
     DXGI_SWAP_CHAIN_DESC sd = {};
@@ -169,34 +174,43 @@ static void start_inject(DWORD pid) {
 static void apply_style() {
     ImGuiStyle& s = ImGui::GetStyle();
     s.WindowRounding = 0.f;
-    s.ChildRounding = 8.f;
-    s.FrameRounding = 6.f;
-    s.PopupRounding = 8.f;
-    s.ScrollbarRounding = 8.f;
-    s.GrabRounding = 6.f;
-    s.FramePadding = ImVec2(12, 8);
-    s.ItemSpacing = ImVec2(10, 8);
-    s.WindowPadding = ImVec2(20, 16);
-    s.ScrollbarSize = 10.f;
+    s.ChildRounding = 12.f;      // card
+    s.FrameRounding = 8.f;       // control
+    s.PopupRounding = 10.f;      // popup
+    s.ScrollbarRounding = 12.f;
+    s.GrabRounding = 8.f;
+    s.TabRounding = 8.f;
+    s.FramePadding = ImVec2(10, 10);
+    s.ItemSpacing = ImVec2(12, 10);
+    s.WindowPadding = ImVec2(24, 20);   // panel
+    s.ScrollbarSize = 8.f;              // scrollbar
     s.WindowBorderSize = 0.f;
+    s.ChildBorderSize = 1.f;
 
     ImVec4* c = s.Colors;
     c[ImGuiCol_WindowBg]        = BG_DARK;
-    c[ImGuiCol_ChildBg]         = ImVec4(0.10f, 0.11f, 0.14f, 1.0f);
-    c[ImGuiCol_Text]            = ImVec4(0.92f, 0.93f, 0.96f, 1.0f);
-    c[ImGuiCol_TextDisabled]    = ImVec4(0.50f, 0.52f, 0.58f, 1.0f);
-    c[ImGuiCol_FrameBg]         = ImVec4(0.14f, 0.15f, 0.19f, 1.0f);
-    c[ImGuiCol_FrameBgHovered]  = ImVec4(0.18f, 0.19f, 0.24f, 1.0f);
-    c[ImGuiCol_FrameBgActive]   = ImVec4(0.22f, 0.23f, 0.29f, 1.0f);
-    c[ImGuiCol_Button]          = ImVec4(0.20f, 0.21f, 0.26f, 1.0f);
-    c[ImGuiCol_ButtonHovered]   = ImVec4(0.28f, 0.29f, 0.36f, 1.0f);
-    c[ImGuiCol_ButtonActive]    = ACCENT;
-    c[ImGuiCol_Header]          = ImVec4(0.16f, 0.17f, 0.21f, 1.0f);
-    c[ImGuiCol_HeaderHovered]   = ImVec4(0.45f, 0.40f, 0.95f, 0.35f);
-    c[ImGuiCol_HeaderActive]    = ImVec4(0.45f, 0.40f, 0.95f, 0.55f);
+    c[ImGuiCol_ChildBg]         = SURFACE;
+    c[ImGuiCol_PopupBg]         = ImVec4(SURFACE.x, SURFACE.y, SURFACE.z, 0.98f);
+    c[ImGuiCol_Border]          = ImVec4(BORDER.x, BORDER.y, BORDER.z, 0.60f);
+    c[ImGuiCol_Text]            = ImVec4(1.00f, 1.00f, 1.00f, 1.0f);
+    c[ImGuiCol_TextDisabled]    = ImVec4(1.00f, 1.00f, 1.00f, 0.55f);
+    c[ImGuiCol_FrameBg]         = SURFACE;
+    c[ImGuiCol_FrameBgHovered]  = SURFACE_H;
+    c[ImGuiCol_FrameBgActive]   = SURFACE_A;
+    c[ImGuiCol_Button]          = SURFACE;
+    c[ImGuiCol_ButtonHovered]   = SURFACE_H;
+    c[ImGuiCol_ButtonActive]    = SURFACE_A;
+    c[ImGuiCol_Header]          = ImVec4(ACCENT.x, ACCENT.y, ACCENT.z, 0.18f);
+    c[ImGuiCol_HeaderHovered]   = ImVec4(ACCENT.x, ACCENT.y, ACCENT.z, 0.32f);
+    c[ImGuiCol_HeaderActive]    = ImVec4(ACCENT.x, ACCENT.y, ACCENT.z, 0.45f);
     c[ImGuiCol_ScrollbarBg]     = ImVec4(0, 0, 0, 0);
-    c[ImGuiCol_ScrollbarGrab]   = ImVec4(0.30f, 0.31f, 0.38f, 1.0f);
-    c[ImGuiCol_Separator]       = ImVec4(0.22f, 0.23f, 0.28f, 1.0f);
+    c[ImGuiCol_ScrollbarGrab]   = SURFACE_H;
+    c[ImGuiCol_ScrollbarGrabHovered] = SURFACE_A;
+    c[ImGuiCol_ScrollbarGrabActive]  = SURFACE_A;
+    c[ImGuiCol_Separator]       = ImVec4(BORDER.x, BORDER.y, BORDER.z, 0.60f);
+    c[ImGuiCol_CheckMark]       = ACCENT;
+    c[ImGuiCol_SliderGrab]      = ACCENT;
+    c[ImGuiCol_SliderGrabActive]= ACCENT_H;
 }
 
 static void draw_ui() {
@@ -233,7 +247,7 @@ static void draw_ui() {
             bool builtin = i < GI_BUILTIN_KEYWORDS;
             if (builtin) ImGui::BeginDisabled(true);
             ImGui::PushStyleColor(ImGuiCol_Button,
-                builtin ? ImVec4(0.16f, 0.17f, 0.21f, 1.0f)
+                builtin ? ImVec4(SURFACE.x, SURFACE.y, SURFACE.z, 1.0f)
                         : ImVec4(ACCENT.x, ACCENT.y, ACCENT.z, 0.35f));
             if (ImGui::SmallButton(builtin ? u8 : (std::string(u8) + "  ×").c_str()))
                 if (!builtin) delIdx = i;
@@ -310,7 +324,7 @@ static void draw_ui() {
                         ImGui::GetColorU32(ImGuiCol_TextDisabled), sub);
             if (sel)
                 dl->AddRectFilled(p, ImVec2(p.x + 4, p.y + 52),
-                                  ImGui::GetColorU32(ACCENT), 2.f);
+                                  ImGui::GetColorU32(ACCENT), 8.f);
             ImGui::PopID();
         }
     }

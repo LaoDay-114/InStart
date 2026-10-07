@@ -48,21 +48,52 @@ static bool imgui_once_init(HDC hdc) {
 
     ImGui::StyleColorsDark();
     ImGuiStyle& st = ImGui::GetStyle();
-    st.WindowRounding = 8.f; st.FrameRounding = 5.f;
-    st.GrabRounding = 5.f;   st.PopupRounding = 6.f;
-    st.WindowPadding = ImVec2(14, 12); st.FramePadding = ImVec2(8, 5);
-    st.ItemSpacing = ImVec2(10, 8);
+    // EUI-NEO dark 主题移植
+    st.WindowRounding = 12.f; st.ChildRounding = 12.f;
+    st.FrameRounding = 8.f;   st.GrabRounding = 8.f;
+    st.PopupRounding = 10.f;  st.TabRounding = 8.f;
+    st.ScrollbarRounding = 12.f;
+    st.WindowPadding = ImVec2(16, 14); st.FramePadding = ImVec2(10, 6);
+    st.ItemSpacing = ImVec2(12, 10);
+    st.ScrollbarSize = 8.f;
+    st.WindowBorderSize = 0.f;
+
+    const ImVec4 BG      = ImVec4(0.10f, 0.10f, 0.12f, 0.96f);
+    const ImVec4 SURF    = ImVec4(0.15f, 0.15f, 0.18f, 1.00f);
+    const ImVec4 SURF_H  = ImVec4(0.25f, 0.25f, 0.28f, 1.00f);
+    const ImVec4 SURF_A  = ImVec4(0.35f, 0.35f, 0.38f, 1.00f);
+    const ImVec4 ACC     = ImVec4(0.22f, 0.44f, 0.88f, 1.00f);
+    const ImVec4 BORD    = ImVec4(0.30f, 0.30f, 0.30f, 0.60f);
+
     ImVec4* c = st.Colors;
-    c[ImGuiCol_WindowBg]        = ImVec4(0.06f, 0.07f, 0.10f, 0.94f);
-    c[ImGuiCol_TitleBgActive]   = ImVec4(0.10f, 0.14f, 0.20f, 1.00f);
-    c[ImGuiCol_Border]          = ImVec4(0.25f, 0.65f, 0.85f, 0.45f);
-    c[ImGuiCol_CheckMark]       = ImVec4(0.30f, 0.80f, 1.00f, 1.00f);
-    c[ImGuiCol_SliderGrab]      = ImVec4(0.30f, 0.80f, 1.00f, 0.80f);
-    c[ImGuiCol_SliderGrabActive]= ImVec4(0.45f, 0.90f, 1.00f, 1.00f);
-    c[ImGuiCol_Tab]             = ImVec4(0.10f, 0.14f, 0.20f, 1.00f);
-    c[ImGuiCol_TabSelected]     = ImVec4(0.16f, 0.34f, 0.46f, 1.00f);
-    c[ImGuiCol_Header]          = ImVec4(0.16f, 0.34f, 0.46f, 0.60f);
-    c[ImGuiCol_FrameBg]         = ImVec4(0.12f, 0.16f, 0.22f, 1.00f);
+    c[ImGuiCol_WindowBg]        = BG;
+    c[ImGuiCol_ChildBg]         = SURF;
+    c[ImGuiCol_PopupBg]         = ImVec4(SURF.x, SURF.y, SURF.z, 0.98f);
+    c[ImGuiCol_Border]          = BORD;
+    c[ImGuiCol_Text]            = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
+    c[ImGuiCol_TextDisabled]    = ImVec4(1.00f, 1.00f, 1.00f, 0.55f);
+    c[ImGuiCol_FrameBg]         = SURF;
+    c[ImGuiCol_FrameBgHovered]  = SURF_H;
+    c[ImGuiCol_FrameBgActive]   = SURF_A;
+    c[ImGuiCol_Button]          = SURF;
+    c[ImGuiCol_ButtonHovered]   = SURF_H;
+    c[ImGuiCol_ButtonActive]    = SURF_A;
+    c[ImGuiCol_Header]          = ImVec4(ACC.x, ACC.y, ACC.z, 0.18f);
+    c[ImGuiCol_HeaderHovered]   = ImVec4(ACC.x, ACC.y, ACC.z, 0.32f);
+    c[ImGuiCol_HeaderActive]    = ImVec4(ACC.x, ACC.y, ACC.z, 0.45f);
+    c[ImGuiCol_TitleBg]         = SURF;
+    c[ImGuiCol_TitleBgActive]   = SURF_H;
+    c[ImGuiCol_CheckMark]       = ACC;
+    c[ImGuiCol_SliderGrab]      = ACC;
+    c[ImGuiCol_SliderGrabActive]= ImVec4(0.35f, 0.55f, 0.95f, 1.00f);
+    c[ImGuiCol_Tab]             = SURF;
+    c[ImGuiCol_TabHovered]      = ImVec4(ACC.x, ACC.y, ACC.z, 0.40f);
+    c[ImGuiCol_TabSelected]     = ImVec4(ACC.x, ACC.y, ACC.z, 0.55f);
+    c[ImGuiCol_ScrollbarBg]     = ImVec4(0, 0, 0, 0);
+    c[ImGuiCol_ScrollbarGrab]   = SURF_H;
+    c[ImGuiCol_ScrollbarGrabHovered] = SURF_A;
+    c[ImGuiCol_ScrollbarGrabActive]  = SURF_A;
+    c[ImGuiCol_Separator]       = BORD;
 
     if (!ImGui_ImplWin32_Init(g_hwnd)) return false;
     if (!ImGui_ImplOpenGL3_Init(nullptr)) return false;

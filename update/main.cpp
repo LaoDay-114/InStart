@@ -141,11 +141,16 @@ static IDXGISwapChain*         g_swap = nullptr;
 static ID3D11RenderTargetView* g_rtv = nullptr;
 static UINT g_resizeW = 0, g_resizeH = 0;
 
-static const ImVec4 ACCENT   = ImVec4(0.45f, 0.40f, 0.95f, 1.0f);
-static const ImVec4 ACCENT_H = ImVec4(0.55f, 0.50f, 1.00f, 1.0f);
-static const ImVec4 OK_GREEN = ImVec4(0.30f, 0.85f, 0.45f, 1.0f);
-static const ImVec4 ERR_RED  = ImVec4(0.95f, 0.35f, 0.35f, 1.0f);
-static const ImVec4 BG_DARK  = ImVec4(0.075f, 0.08f, 0.10f, 1.0f);
+// EUI-NEO dark 主题移植
+static const ImVec4 ACCENT     = ImVec4(0.22f, 0.44f, 0.88f, 1.0f);
+static const ImVec4 ACCENT_H   = ImVec4(0.35f, 0.55f, 0.95f, 1.0f);
+static const ImVec4 OK_GREEN   = ImVec4(0.30f, 0.85f, 0.45f, 1.0f);
+static const ImVec4 ERR_RED    = ImVec4(0.95f, 0.35f, 0.35f, 1.0f);
+static const ImVec4 BG_DARK    = ImVec4(0.10f, 0.10f, 0.12f, 1.0f);
+static const ImVec4 SURFACE    = ImVec4(0.15f, 0.15f, 0.18f, 1.0f);
+static const ImVec4 SURFACE_H  = ImVec4(0.25f, 0.25f, 0.28f, 1.0f);
+static const ImVec4 SURFACE_A  = ImVec4(0.35f, 0.35f, 0.38f, 1.0f);
+static const ImVec4 BORDER     = ImVec4(0.30f, 0.30f, 0.30f, 1.0f);
 
 enum UiState {
     ST_CHECKING,     // 正在查询 GitHub
@@ -312,11 +317,11 @@ static void draw_ui() {
         ImGui::Text("已是最新版本（%s）", INST_VERSION);
         break;
     case ST_AVAILABLE:
-        status_dot(IM_COL32(140, 128, 242, 255));
+        status_dot(ImGui::GetColorU32(ACCENT));
         ImGui::Text("发现新版本：%s", g_info.tag.c_str());
         break;
     case ST_DOWNLOADING:
-        status_dot(IM_COL32(140, 128, 242, 255));
+        status_dot(ImGui::GetColorU32(ACCENT));
         ImGui::Text("正在下载（%d / %d）", g_pindex.load(), g_pcount.load());
         break;
     case ST_DONE:
@@ -428,29 +433,43 @@ static LRESULT WINAPI wnd_proc(HWND h, UINT msg, WPARAM w, LPARAM l) {
 static void apply_style() {
     ImGuiStyle& s = ImGui::GetStyle();
     s.WindowRounding = 0.f;
-    s.ChildRounding = 8.f;
-    s.FrameRounding = 6.f;
-    s.GrabRounding = 6.f;
-    s.FramePadding = ImVec2(12, 8);
-    s.ItemSpacing = ImVec2(10, 8);
-    s.WindowPadding = ImVec2(20, 16);
-    s.ScrollbarSize = 10.f;
+    s.ChildRounding = 12.f;
+    s.FrameRounding = 8.f;
+    s.PopupRounding = 10.f;
+    s.ScrollbarRounding = 12.f;
+    s.GrabRounding = 8.f;
+    s.TabRounding = 8.f;
+    s.FramePadding = ImVec2(10, 10);
+    s.ItemSpacing = ImVec2(12, 10);
+    s.WindowPadding = ImVec2(24, 20);
+    s.ScrollbarSize = 8.f;
     s.WindowBorderSize = 0.f;
+    s.ChildBorderSize = 1.f;
 
     ImVec4* c = s.Colors;
     c[ImGuiCol_WindowBg]        = BG_DARK;
-    c[ImGuiCol_ChildBg]         = ImVec4(0.10f, 0.11f, 0.14f, 1.0f);
-    c[ImGuiCol_Text]            = ImVec4(0.92f, 0.93f, 0.96f, 1.0f);
-    c[ImGuiCol_TextDisabled]    = ImVec4(0.50f, 0.52f, 0.58f, 1.0f);
-    c[ImGuiCol_FrameBg]         = ImVec4(0.14f, 0.15f, 0.19f, 1.0f);
-    c[ImGuiCol_FrameBgHovered]  = ImVec4(0.18f, 0.19f, 0.24f, 1.0f);
-    c[ImGuiCol_FrameBgActive]   = ImVec4(0.22f, 0.23f, 0.29f, 1.0f);
-    c[ImGuiCol_Button]          = ImVec4(0.20f, 0.21f, 0.26f, 1.0f);
-    c[ImGuiCol_ButtonHovered]   = ImVec4(0.28f, 0.29f, 0.36f, 1.0f);
-    c[ImGuiCol_ButtonActive]    = ACCENT;
+    c[ImGuiCol_ChildBg]         = SURFACE;
+    c[ImGuiCol_PopupBg]         = ImVec4(SURFACE.x, SURFACE.y, SURFACE.z, 0.98f);
+    c[ImGuiCol_Border]          = ImVec4(BORDER.x, BORDER.y, BORDER.z, 0.60f);
+    c[ImGuiCol_Text]            = ImVec4(1.00f, 1.00f, 1.00f, 1.0f);
+    c[ImGuiCol_TextDisabled]    = ImVec4(1.00f, 1.00f, 1.00f, 0.55f);
+    c[ImGuiCol_FrameBg]         = SURFACE;
+    c[ImGuiCol_FrameBgHovered]  = SURFACE_H;
+    c[ImGuiCol_FrameBgActive]   = SURFACE_A;
+    c[ImGuiCol_Button]          = SURFACE;
+    c[ImGuiCol_ButtonHovered]   = SURFACE_H;
+    c[ImGuiCol_ButtonActive]    = SURFACE_A;
+    c[ImGuiCol_Header]          = ImVec4(ACCENT.x, ACCENT.y, ACCENT.z, 0.18f);
+    c[ImGuiCol_HeaderHovered]   = ImVec4(ACCENT.x, ACCENT.y, ACCENT.z, 0.32f);
+    c[ImGuiCol_HeaderActive]    = ImVec4(ACCENT.x, ACCENT.y, ACCENT.z, 0.45f);
     c[ImGuiCol_ScrollbarBg]     = ImVec4(0, 0, 0, 0);
-    c[ImGuiCol_ScrollbarGrab]   = ImVec4(0.30f, 0.31f, 0.38f, 1.0f);
-    c[ImGuiCol_Separator]       = ImVec4(0.22f, 0.23f, 0.28f, 1.0f);
+    c[ImGuiCol_ScrollbarGrab]   = SURFACE_H;
+    c[ImGuiCol_ScrollbarGrabHovered] = SURFACE_A;
+    c[ImGuiCol_ScrollbarGrabActive]  = SURFACE_A;
+    c[ImGuiCol_Separator]       = ImVec4(BORDER.x, BORDER.y, BORDER.z, 0.60f);
+    c[ImGuiCol_CheckMark]       = ACCENT;
+    c[ImGuiCol_SliderGrab]      = ACCENT;
+    c[ImGuiCol_SliderGrabActive]= ACCENT_H;
     c[ImGuiCol_PlotHistogram]   = ACCENT;
 }
 
@@ -479,7 +498,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE, LPSTR, int) {
     // 深色标题栏（Win10 1809+，老系统自动忽略）
     BOOL dark = TRUE;
     DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof dark);
-    COLORREF caption = 0x001A1413;  // 与 BG_DARK 一致
+    COLORREF caption = 0x001E1919;  // 与 BG_DARK 一致
     DwmSetWindowAttribute(hwnd, 35, &caption, sizeof caption);
 
     if (!create_device(hwnd)) { cleanup_device(); return 1; }

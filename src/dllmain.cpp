@@ -1,4 +1,3 @@
-// DLL 入口：DllMain 只派发线程，初始化在独立线程完成
 #include <windows.h>
 #include "hooks.h"
 #include "config.h"

@@ -1,4 +1,3 @@
-// 游戏内菜单：坐标 HUD、右上角功能列表、注入横幅、ImGui 主界面
 #include <cstdio>
 #include <cmath>
 #include <string>
@@ -20,7 +19,6 @@ static ImU32 rainbow_color(int idx, float speed = 1.2f, float sat = 0.85f, float
     return IM_COL32((int)(r * 255), (int)(g * 255), (int)(b * 255), 255);
 }
 
-// 带半透明背景的文字，返回占用高度
 static float draw_chip(ImDrawList* dl, ImFont* font, float x, float y, const char* text, ImU32 color) {
     ImVec2 ts = font->CalcTextSizeA(17.0f, FLT_MAX, 0, text);
     const float padX = 7.0f, padY = 3.0f;
@@ -33,7 +31,6 @@ static float draw_chip(ImDrawList* dl, ImFont* font, float x, float y, const cha
     return ts.y + padY * 2 + 3.0f;
 }
 
-// 屏幕顶部居中的提示横幅
 static void draw_banner(ImDrawList* dl, ImFont* font, const char* text, ImU32 color,
                         float y = 20.0f) {
     ImGuiIO& io = ImGui::GetIO();
@@ -61,7 +58,6 @@ void menu_draw() {
     ImFont* font = ImGui::GetFont();
     ImGuiIO& io = ImGui::GetIO();
 
-    // 注入完成横幅，显示 4 秒
     if (!g_state.injectShown && g_state.jniReady) {
         g_state.injectShown = true;
     }
@@ -95,7 +91,6 @@ void menu_draw() {
         draw_banner(dl, font, buf, IM_COL32(56, 113, 224, 255), 64.0f);
     }
 
-    // 左上角坐标 HUD
     if (g_cfg.hud) {
         char buf[160];
         if (g_state.inGame)
@@ -106,7 +101,6 @@ void menu_draw() {
         draw_chip(dl, font, 16, 12, buf, rainbow_color(0));
     }
 
-    // 右上角功能列表
     {
         struct { bool on; const char* name; } feats[] = {
             { g_cfg.fly,        "飞行" },

@@ -1,5 +1,3 @@
-// 启动器：列出检测到的游戏实例，用户选择后通过子进程调用注入器，
-// 注入失败或崩溃时显示原因。UI 基于 EUI-NEO。
 #include "eui_neo.h"
 
 #include <windows.h>
@@ -36,13 +34,13 @@ const Color kBorder    = components::theme::withOpacity(components::theme::dark(
 std::vector<GameInstance> g_instances;
 int         g_selected = -1;
 
-TitleKeywords g_kw;              // 标题匹配关键词（内置 + 自定义）
-std::string   g_kwInput;         // 新关键词输入框
+TitleKeywords g_kw;
+std::string   g_kwInput;
 
 std::atomic<bool> g_injecting{ false };
 std::mutex        g_logMtx;
-std::string       g_log;         // 注入输出
-std::atomic<int>  g_lastExit{ -1 };  // -1 无结果 0 成功 1 失败 2 崩溃
+std::string       g_log;
+std::atomic<int>  g_lastExit{ -1 };
 std::atomic<bool> g_resultNew{ false };
 int               g_injectedPid = 0;
 
@@ -124,7 +122,6 @@ void inject_worker(DWORD pid) {
     CloseHandle(pi.hProcess);
 
     int exit = (code == 0) ? 0 : (code == 2 ? 2 : 1);
-    // 进程异常终止（非 0/1/2，如被杀软强杀）也按崩溃处理
     if (exit == 1 && code > 2) exit = 2;
     g_lastExit = exit;
     g_resultNew = true;
@@ -139,7 +136,6 @@ void start_inject(DWORD pid) {
     std::thread(inject_worker, pid).detach();
 }
 
-// 估算文本宽度用于关键词芯片（ASCII 半宽，其余按全宽）
 float text_width(const std::string& s, float fontSize) {
     float w = 0.0f;
     for (size_t i = 0; i < s.size();) {
@@ -188,7 +184,7 @@ void dark_title_bar_once() {
     if (!hwnd) return;
     BOOL dark = TRUE;
     DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof dark);
-    COLORREF caption = RGB(0x1A, 0x1A, 0x1F); // 与主题背景一致
+    COLORREF caption = RGB(0x1A, 0x1A, 0x1F);
     DwmSetWindowAttribute(hwnd, 35, &caption, sizeof caption);
 }
 
@@ -446,7 +442,7 @@ void build_footer(eui::Ui& ui, float width) {
         .build();
 }
 
-} // namespace
+}
 
 const DslAppConfig& dslAppConfig() {
     static const DslAppConfig config = DslAppConfig{}
@@ -477,7 +473,6 @@ void compose(eui::Ui& ui, const eui::Screen& screen) {
     const float gap = 12.0f;
     const bool showLog = g_resultNew && g_lastExit > 0;
     const float logH = showLog ? 110.0f + gap : 0.0f;
-    // 关键词卡片高度：标题+提示+芯片行+输入行+卡片内边距
     const float kwH = 32.0f + 16.0f + 10.0f + 18.0f + 8.0f + 26.0f + 10.0f + 32.0f + 10.0f;
     const float instH = screen.height - pad * 2.0f - headerH - kwH - statusH -
                         footerH - logH - gap * 4.0f;
@@ -512,4 +507,4 @@ void compose(eui::Ui& ui, const eui::Screen& screen) {
         .build();
 }
 
-} // namespace app
+}

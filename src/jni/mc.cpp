@@ -1,4 +1,3 @@
-// JNI 层：附着进程内 JVM，按版本映射解析游戏类，每帧把功能开关写进游戏对象。
 #include <jni.h>
 #include <windows.h>
 #include <cstring>
@@ -66,7 +65,6 @@ static jclass find_class(JNIEnv* env, const char* name) {
     if (c) return c;
     if (env->ExceptionCheck()) env->ExceptionClear();
 
-    // Knot 环境下 FindClass 失败，用当前线程的上下文类加载器
     jclass threadCls = env->FindClass("java/lang/Thread");
     if (!threadCls) { if (env->ExceptionCheck()) env->ExceptionClear(); return nullptr; }
     jmethodID cur = env->GetStaticMethodID(threadCls, "currentThread", "()Ljava/lang/Thread;");
@@ -142,7 +140,6 @@ static bool pick_mappings(const char* version) {
     return false;
 }
 
-// Fabric Loader 会把版本串改成 "1.21.11-Fabric_0.19.2"，取前缀的正式版本号。
 static bool extract_base_version(const char* ver, char* out, size_t outsz) {
     if (!ver || ver[0] < '0' || ver[0] > '9') return false;
     size_t n = 0;
@@ -445,7 +442,6 @@ void mc_apply_features() {
     prevFly = g_cfg.fly;  prevFlySp = g_cfg.flySpeed;
     prevSpeed = g_cfg.speed; prevSpMult = g_cfg.speedMult;
 
-    // walkSpeed 之外直接写 MOVEMENT_SPEED 属性基础值，命中最终消费点
     if (g_cfg.speed || prevSpeed) {
         float ws = g_cfg.speed ? 0.1f * g_cfg.speedMult : 0.1f;
         bool sprint = env->CallBooleanMethod(player, m_isSprinting) == JNI_TRUE;
@@ -478,7 +474,6 @@ void mc_apply_features() {
         prevFb = g_cfg.fullbright;
     }
 
-    // ESP：开时强制 glowing、关时强制恢复
     {
         jobject world = env->GetObjectField(mc, f_mc_world);
         if (world && !env->ExceptionCheck()) {
@@ -567,7 +562,6 @@ void mc_apply_features() {
 
     static int totemTick = 0;
     if (g_cfg.autoTotem && (++totemTick % 10 == 0)) {
-        // 打开 GUI 时不动物品
         jobject curScreen = env->GetObjectField(mc, f_mc_currentScreen);
         if (!curScreen && !env->ExceptionCheck()) {
             bool hasTotem = false;
@@ -605,7 +599,6 @@ void mc_apply_features() {
                     if (found >= 0) {
                         jobject im = env->GetObjectField(mc, f_mc_interactionManager);
                         if (im) {
-                            // 快捷栏 0~8 对应界面槽位 36~44
                             int slot = (found < 9) ? (36 + found) : found;
                             env->CallVoidMethod(im, m_clickSlot, 0, slot, 40, g_swapAction, player);
                             if (env->ExceptionCheck()) env->ExceptionClear();

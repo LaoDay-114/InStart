@@ -6,7 +6,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
-# 版本号：与 CI 标签保持一致 build-<提交计数>-<短SHA>
 execute_process(
     COMMAND git rev-list --count HEAD
     OUTPUT_VARIABLE GIT_COUNT
@@ -26,7 +25,6 @@ else()
 endif()
 add_compile_definitions(INST_VERSION="${INST_VERSION}")
 
-# EUI-NEO 子目录（禁用示例与安装）
 set(EUI_BUILD_APPS OFF CACHE BOOL "" FORCE)
 set(EUI_BUILD_USER_APPS OFF CACHE BOOL "" FORCE)
 set(EUI_BUILD_TEST_FIXTURES OFF CACHE BOOL "" FORCE)
@@ -38,7 +36,6 @@ add_subdirectory(3rd/EUI-NEO)
 get_property(EUI_APP_MAIN_SOURCE GLOBAL PROPERTY EUI_NEO_APP_MAIN_SOURCE)
 get_property(EUI_APP_ICON_RESOURCE GLOBAL PROPERTY EUI_NEO_APP_ICON_RESOURCE)
 
-# 启动器（入口 main 由 EUI-NEO 提供）
 add_executable(InStart launcher/main.cpp)
 target_include_directories(InStart PRIVATE injector)
 target_compile_definitions(InStart PRIVATE UNICODE _UNICODE)
@@ -47,7 +44,6 @@ target_link_libraries(InStart PRIVATE dwmapi)
 set_target_properties(InStart PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
 
-# 更新器（需要自定义 main 处理 --silent）
 add_executable(InStartUpdateManager update/main.cpp update/update_check.cpp)
 target_include_directories(InStartUpdateManager PRIVATE update injector)
 target_compile_definitions(InStartUpdateManager PRIVATE UNICODE _UNICODE EUI_APP_RUNNER_LIBRARY=1)

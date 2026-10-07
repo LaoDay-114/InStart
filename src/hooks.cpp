@@ -1,5 +1,3 @@
-// Hook 层：MinHook 挂 wglSwapBuffers 做帧渲染，子类化窗口接管菜单输入，
-// 并轮询快捷键与绑定等待状态。
 #include <windows.h>
 #include <cstdio>
 #include <imgui.h>
@@ -21,7 +19,7 @@ static WNDPROC o_wndproc = nullptr;
 static HWND    g_hwnd = nullptr;
 static bool    g_imguiReady = false;
 
-static int   g_bindWaiting = -1; // -1 = 不在等待，否则等待为 bind[i] 捕获按键
+static int   g_bindWaiting = -1;
 static bool  g_bindPrev[256] = {};
 
 static bool imgui_once_init(HDC hdc) {
@@ -48,7 +46,6 @@ static bool imgui_once_init(HDC hdc) {
 
     ImGui::StyleColorsDark();
     ImGuiStyle& st = ImGui::GetStyle();
-    // EUI-NEO dark 主题移植
     st.WindowRounding = 12.f; st.ChildRounding = 12.f;
     st.FrameRounding = 8.f;   st.GrabRounding = 8.f;
     st.PopupRounding = 10.f;  st.TabRounding = 8.f;
@@ -106,7 +103,6 @@ LRESULT CALLBACK in_wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     if (g_imguiReady)
         ImGui_ImplWin32_WndProcHandler(h, msg, wp, lp);
 
-    // 菜单打开时吞掉鼠标输入，点击不会转动视角
     if (g_cfg.showMenu) {
         switch (msg) {
         case WM_INPUT:
@@ -186,7 +182,6 @@ static bool key_edge(int vk) {
 
 static void poll_keybinds() {
     if (g_bindWaiting >= 0 && g_bindWaiting < BIND_COUNT) {
-        // Esc / Delete 清除绑定
         if (key_edge(VK_ESCAPE) || key_edge(VK_DELETE)) {
             g_cfg.bind[g_bindWaiting] = 0;
             g_bindWaiting = -1;

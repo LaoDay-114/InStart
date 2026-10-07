@@ -262,7 +262,7 @@ long long update_build_num(const std::string& tag) {
     if (tag.rfind("build-", 0) != 0) return 0;
     size_t d = tag.find('-', 6);
     if (d == std::string::npos || tag.find('-', d + 1) != std::string::npos)
-        return 0;  // 旧标签 build-日期-时间-SHA 有三段，忽略
+        return 0;
     long long num = 0;
     for (size_t i = 6; i < d; ++i) {
         char c = tag[i];

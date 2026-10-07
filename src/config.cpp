@@ -1,5 +1,3 @@
-// 配置持久化：InStartConfig\config.txt，文件头记录 magic/版本/结构体大小，
-// 布局变更后旧文件自动弃用。改动 InStartConfig 字段时递增 CFG_VER。
 #include <windows.h>
 #include <cstdio>
 #include <cstdint>
@@ -9,7 +7,7 @@
 
 static wchar_t g_cfgPath[MAX_PATH] = {};
 
-static const uint32_t CFG_MAGIC = 0x54534E49; // "INST"
+static const uint32_t CFG_MAGIC = 0x54534E49;
 static const uint32_t CFG_VER   = 4;
 struct CfgHeader { uint32_t magic; uint32_t ver; uint32_t size; };
 
@@ -57,7 +55,6 @@ static bool is_bindable_vk(int vk) {
     if (vk == 0) return true;
     if (vk < 1 || vk > 254) return false;
     if (vk >= VK_LBUTTON && vk <= VK_XBUTTON2) return false;
-    // Windows 保留/未分配虚拟键码段
     if ((vk >= 0x0B && vk <= 0x0F) ||
         (vk >= 0x3A && vk <= 0x40) ||
         (vk >= 0x88 && vk <= 0x8F) ||
@@ -69,7 +66,6 @@ static bool in_range(float v, float lo, float hi) {
     return std::isfinite(v) && v >= lo && v <= hi;
 }
 
-// 修正损坏的配置项并回写，避免坏配置把功能锁死
 void config_sanitize() {
     bool fixed = false;
 
@@ -91,7 +87,6 @@ void config_sanitize() {
     for (int i = 0; i < BIND_COUNT; ++i) {
         if (!is_bindable_vk(g_cfg.bind[i])) { g_cfg.bind[i] = 0; fixed = true; }
     }
-    // 菜单键丢失则无法再呼出菜单，恢复右 Alt
     if (g_cfg.bind[BIND_MENU] == 0) {
         g_cfg.bind[BIND_MENU] = VK_RMENU;
         fixed = true;

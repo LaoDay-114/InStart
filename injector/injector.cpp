@@ -1,5 +1,3 @@
-// CLI 后端：--list 列出实例，--inject <pid> 注入 InStart.dll。
-// 退出码 0 成功 / 1 失败 / 2 崩溃；崩溃经异常过滤器处理，不弹系统错误框。
 #include <windows.h>
 #include <cstdio>
 #include <cstring>
@@ -101,7 +99,7 @@ static int seh_body(int argc, char** argv) {
     if (argc >= 3 && strcmp(argv[1], "--inject") == 0)
         return do_inject((DWORD)strtoul(argv[2], nullptr, 10));
 
-    if (argc == 1) { // 兼容旧用法：自动注入第一个实例
+    if (argc == 1) {
         GameInstance items[16];
         int n = scan_game_instances(items, 16);
         if (n == 0) {
@@ -116,11 +114,9 @@ static int seh_body(int argc, char** argv) {
     return 1;
 }
 
-// MinGW 没有 __try/__except，用顶层过滤器 + VEH 兜底崩溃
 static LONG WINAPI crash_filter(EXCEPTION_POINTERS* ep) {
     unsigned code = ep->ExceptionRecord->ExceptionCode;
     const char* name = seh_name(code);
-    // VEH 场景下 stderr 无缓冲更可靠，stdout 也写一份
     fprintf(stdout, "[CRASH] 注入器崩溃：code=0x%08lX%s%s\n",
             code, name ? " " : "", name ? name : "");
     fflush(stdout); fflush(stderr);

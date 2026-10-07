@@ -1,5 +1,3 @@
-// 更新器：查询 GitHub Release，下载并替换有变化的文件。
-// 无参数启动为图形界面（EUI-NEO）；--silent 静默检查并自动安装（无界面）。
 #include "eui_neo.h"
 
 #include <windows.h>
@@ -23,7 +21,7 @@
 #define DWMWA_USE_IMMERSIVE_DARK_MODE 20
 #endif
 
-int eui_app_run(); // EUI-NEO 入口（EUI_APP_RUNNER_LIBRARY 只导出函数不含 main）
+int eui_app_run();
 
 namespace app {
 namespace {
@@ -37,7 +35,6 @@ const Color kErrRed    = components::theme::color(0.95f, 0.35f, 0.35f);
 const Color kText      = components::theme::color(1.00f, 1.00f, 1.00f);
 const Color kMuted     = components::theme::withOpacity(components::theme::dark().text, 0.55f);
 
-// ---------- 文件操作 ----------
 
 std::wstring exe_dir() {
     wchar_t buf[MAX_PATH];
@@ -81,7 +78,6 @@ struct Placed {
     std::wstring final, old;
 };
 
-// 下载并替换单个文件：先下到 .new，原文件改名 .old，成功后清理
 int install_asset(const UpdateAsset& a, const std::wstring& dir,
                   std::vector<Placed>& placed,
                   DownloadProgress cb = nullptr, void* user = nullptr) {
@@ -114,7 +110,6 @@ int install_asset(const UpdateAsset& a, const std::wstring& dir,
         return 1;
     }
 
-    // 运行中的 exe/dll 删不掉，残留的 .old 下次更新时再清理
     DeleteFileW(oldPath.c_str());
     placed.push_back({ finalPath, moved ? oldPath : L"" });
     return 0;
@@ -127,7 +122,6 @@ int install(const UpdateInfo& info, const std::wstring& dir,
     return placed.empty() && !info.assets.empty() ? 1 : 0;
 }
 
-// ---------- 静默模式 ----------
 
 int run_silent() {
     std::wstring dir = exe_dir();
@@ -144,25 +138,24 @@ int run_silent() {
     return 0;
 }
 
-// ---------- 图形界面 ----------
 
 enum UiState {
-    ST_CHECKING,     // 正在查询 GitHub
-    ST_LATEST,       // 已是最新
-    ST_AVAILABLE,    // 有新版本，等待用户确认
-    ST_DOWNLOADING,  // 下载替换中
-    ST_DONE,         // 全部完成
-    ST_FAILED        // 出错
+    ST_CHECKING,
+    ST_LATEST,
+    ST_AVAILABLE,
+    ST_DOWNLOADING,
+    ST_DONE,
+    ST_FAILED
 };
 
 std::atomic<int> g_ui{ ST_CHECKING };
-UpdateInfo  g_info;             // 查询到的最新版本
-std::string g_baseline;         // 已安装基准（state 文件或编译版本）
-std::string g_err;              // 错误信息
+UpdateInfo  g_info;
+std::string g_baseline;
+std::string g_err;
 std::wstring g_dir;
 
 std::mutex  g_pmtx;
-std::string g_pfile;            // 当前下载的文件名
+std::string g_pfile;
 std::atomic<int> g_pindex{ 0 }, g_pcount{ 0 };
 std::atomic<unsigned long long> g_pdone{ 0 }, g_ptotal{ 0 };
 std::vector<Placed> g_placed;
@@ -240,7 +233,7 @@ void dark_title_bar_once() {
     if (!hwnd) return;
     BOOL dark = TRUE;
     DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof dark);
-    COLORREF caption = RGB(0x1A, 0x1A, 0x1F); // 与主题背景一致
+    COLORREF caption = RGB(0x1A, 0x1A, 0x1F);
     DwmSetWindowAttribute(hwnd, 35, &caption, sizeof caption);
 }
 
@@ -420,7 +413,7 @@ void build_footer(eui::Ui& ui, float w) {
         .build();
 }
 
-} // namespace
+}
 
 const DslAppConfig& dslAppConfig() {
     static const DslAppConfig config = DslAppConfig{}
@@ -507,7 +500,7 @@ void compose(eui::Ui& ui, const eui::Screen& screen) {
         .build();
 }
 
-} // namespace app
+}
 
 int main() {
     if (wcsstr(GetCommandLineW(), L"--silent"))

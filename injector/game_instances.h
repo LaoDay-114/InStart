@@ -1,5 +1,3 @@
-// 游戏实例检测，注入器 CLI 与启动器 UI 共用。
-// 匹配 GLFW 窗口类名 + 标题关键词；自定义词存在 exe 同目录 title_keywords.txt。
 #pragma once
 #include <windows.h>
 #include <cstdio>
@@ -8,7 +6,7 @@
 struct GameInstance {
     DWORD pid;
     HWND  hwnd;
-    char  title[256]; // UTF-8（ImGui 直接渲染）
+    char  title[256];
     char  cls[64];
 };
 
@@ -41,7 +39,6 @@ inline void load_title_keywords(TitleKeywords* kw) {
     char line[256];
     while (kw->count < GI_MAX_KEYWORDS && fgets(line, sizeof line, f)) {
         char* s = line;
-        // 去 UTF-8 BOM
         if ((unsigned char)s[0] == 0xEF && (unsigned char)s[1] == 0xBB &&
             (unsigned char)s[2] == 0xBF) s += 3;
         size_t len = strlen(s);
@@ -55,7 +52,6 @@ inline void load_title_keywords(TitleKeywords* kw) {
     fclose(f);
 }
 
-// 文件只写自定义部分（内置词不持久化）
 inline bool save_title_keywords(const TitleKeywords* kw) {
     wchar_t path[MAX_PATH];
     keywords_file_path(path, MAX_PATH);
@@ -97,7 +93,6 @@ static BOOL CALLBACK enum_game_window(HWND h, LPARAM lp) {
 
     DWORD pid = 0;
     GetWindowThreadProcessId(h, &pid);
-    // 同进程多个匹配窗口只留第一个
     for (int i = 0; i < ctx->count; ++i)
         if (ctx->items[i].pid == pid) return TRUE;
 

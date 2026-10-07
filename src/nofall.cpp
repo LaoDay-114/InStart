@@ -1,6 +1,3 @@
-// NoFall：拦截 ClientCommonNetworkHandler.sendPacket，把移动包的 onGround
-// 改成 true（参考 Meteor 的 Packet 模式）。改字段的做法无效——服务端同 tick
-// 内会覆盖 fallDistance，客户端 onGround 在发包前会被 move() 覆盖。
 #include <jni.h>
 #include <jvmti.h>
 #include <windows.h>
@@ -22,7 +19,6 @@ static jmethodID m_isFallFlying = nullptr;
 static jfieldID  f_pktOnGround = nullptr;
 static jfieldID  f_vecY = nullptr;
 
-// Knot 环境下用上下文类加载器找类
 static jclass find_class(JNIEnv* env, const char* name) {
     jclass c = env->FindClass(name);
     if (c) return c;
@@ -53,7 +49,6 @@ static void JNICALL on_breakpoint(jvmtiEnv*, JNIEnv* jni,
     if (!g_cfg.noFall) return;
 
     jobject packet = nullptr;
-    // depth 0 是 sendPacket，slot 1 是 Packet 参数
     if (g_jvmti->GetLocalObject(thread, 0, 1, &packet) != JVMTI_ERROR_NONE || !packet)
         return;
 

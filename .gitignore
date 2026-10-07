@@ -3,6 +3,7 @@ build/
 build-cmake/
 .xmake/
 assets/
+test/
 InStart.dll
 InStart.dll.a
 InStartInjector.exe
